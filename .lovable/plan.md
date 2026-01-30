@@ -1,127 +1,119 @@
 
 
-# Fix Data Fetching: Show Actual Unclaimed Vote Rewards
+# Fix Vote Rewards Calculation: Handle Large Numbers with BigInt
 
-## Overview
+## Problem
 
-Currently the app displays the `cheeseburner` account's WAX **balance** (which is 0.00000000 WAX) instead of its **unclaimed vote rewards**. This plan adds proper calculation of pending vote rewards using data from the WAX blockchain's `eosio::global` and `eosio::voters` tables.
+The current calculation uses JavaScript's `parseFloat()` on voteshare values that have 48+ significant digits. JavaScript floats only support ~15-17 digits of precision, causing:
+- Numbers parsed as `Infinity` or losing precision
+- Completely wrong reward calculations
+- Currently showing incorrect values in the UI
 
-## Current Problem
+## Data Analysis
 
-The app fetches WAX balance from `eosio.token::accounts` table:
-- Returns: `0.00000000 WAX` (the current liquid balance)
-- This is wrong because rewards are **unclaimed** - they're not in the balance yet
+From the actual API responses:
+```
+voters_bucket: 578966734547186 (int64, needs /10^8 = ~5,789,667 WAX total bucket)
 
-## Solution: Calculate Pending Rewards from Blockchain State
+cheeseburner:
+  unpaid_voteshare: 2607965791245850486182639982333015706660943953920.00000000
+  (48 digits - way beyond float64 precision!)
 
-WAX vote rewards are calculated using this formula from the system contract:
-
-```text
-voter_voteshare = unpaid_voteshare + unpaid_voteshare_change_rate * time_elapsed
-global_voteshare = total_unpaid_voteshare + total_voteshare_change_rate * time_elapsed  
-claimable_wax = voters_bucket * (voter_voteshare / global_voteshare)
+global:
+  total_unpaid_voteshare: 4172409676286281125095931914658329064428566139730132992.00000000
+  (55 digits!)
 ```
 
-## Data Sources Required
+Expected result: `~3-4 WAX` (voter_share/total_share * bucket)
 
-| Table | Contract | Scope | Fields Needed |
-|-------|----------|-------|---------------|
-| `global` | eosio | eosio | `voters_bucket`, `total_unpaid_voteshare`, `total_voteshare_change_rate`, `total_unpaid_voteshare_last_updated` |
-| `voters` | eosio | eosio | `unpaid_voteshare`, `unpaid_voteshare_change_rate`, `unpaid_voteshare_last_updated` (already fetched) |
+## Solution: Use BigInt for Ratio Calculation
 
-## Implementation Plan
+Since we only need the ratio of voter_voteshare to total_voteshare, we can:
+1. Parse the voteshare strings as BigInt (truncating decimals)
+2. Calculate the ratio with scaled integer math
+3. Apply the ratio to voters_bucket
 
-### 1. Add Global State Fetching (`src/lib/waxApi.ts`)
+## Implementation
 
-Add new interface and fetch function:
-
-```typescript
-export interface GlobalState {
-  voters_bucket: number;
-  total_voteshare_change_rate: string;
-  total_unpaid_voteshare: string;
-  total_unpaid_voteshare_last_updated: string;
-}
-
-export async function fetchGlobalState(): Promise<GlobalState | null> {
-  // POST to get_table_rows
-  // code: 'eosio', scope: 'eosio', table: 'global', limit: 1
-}
-```
-
-### 2. Add Reward Calculation Function (`src/lib/waxApi.ts`)
+### 1. Update `calculateClaimableRewards` in `src/lib/waxApi.ts`
 
 ```typescript
 export function calculateClaimableRewards(
   voterData: VoterData,
   globalState: GlobalState
 ): number {
-  const now = Date.now();
+  // Parse voters_bucket (int64, divide by 10^8 for WAX)
+  const votersBucket = parseInt(globalState.voters_bucket, 10) / 100000000;
   
-  // Parse voter's voteshare data
-  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
-  const voterTimeElapsed = (now - voterLastUpdated) / 1000; // seconds
-  const voterVoteshare = parseFloat(voterData.unpaid_voteshare) + 
-    parseFloat(voterData.unpaid_voteshare_change_rate) * voterTimeElapsed;
+  // Parse voteshare values as BigInt (truncate decimal portion)
+  // These numbers are too large for JavaScript floats (48-55 digits)
+  const voterVoteshare = parseBigFloat(voterData.unpaid_voteshare);
+  const totalVoteshare = parseBigFloat(globalState.total_unpaid_voteshare);
   
-  // Parse global voteshare data  
-  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
-  const globalTimeElapsed = (now - globalLastUpdated) / 1000;
-  const globalVoteshare = parseFloat(globalState.total_unpaid_voteshare) + 
-    parseFloat(globalState.total_voteshare_change_rate) * globalTimeElapsed;
+  if (totalVoteshare === 0n) return 0;
   
-  if (globalVoteshare === 0) return 0;
+  // Calculate ratio using scaled integer math
+  // Multiply voter by a large scale, divide by total, then divide by scale
+  const SCALE = 10n ** 18n; // 18 decimal places of precision
+  const ratio = (voterVoteshare * SCALE) / totalVoteshare;
   
-  // Calculate reward: voters_bucket * (voter_share / total_share)
-  const votersBucket = globalState.voters_bucket;
-  const reward = votersBucket * (voterVoteshare / globalVoteshare);
+  // Convert ratio back to float and multiply by bucket
+  const ratioFloat = Number(ratio) / Number(SCALE);
+  const reward = votersBucket * ratioFloat;
   
-  // Convert from internal units (10^8 precision) to WAX
-  return reward / 100000000;
+  return reward;
+}
+
+// Helper to parse large decimal strings to BigInt (truncating decimals)
+function parseBigFloat(value: string): bigint {
+  // Remove decimal portion - we only need integer part for ratio
+  const intPart = value.split('.')[0];
+  try {
+    return BigInt(intPart);
+  } catch {
+    return 0n;
+  }
 }
 ```
 
-### 3. Update Hook to Fetch Global State (`src/hooks/useWaxData.ts`)
+### 2. Simplify the Calculation (Skip Time Adjustments Initially)
 
-Add a new query for global state and use the calculation:
+For the initial fix, skip the time-elapsed adjustments since:
+- The voteshare data is already very recent (updated every few seconds)
+- The time adjustment adds minimal difference for small time windows
+- We can add accurate time adjustments later if needed
 
-```typescript
-// Add global state query
-const globalQuery = useQuery({
-  queryKey: ['globalState'],
-  queryFn: () => fetchGlobalState(),
-  refetchInterval: REFRESH_INTERVAL,
-  staleTime: 10000,
-});
-
-// Calculate claimable rewards instead of using balance
-const claimableWax = useMemo(() => {
-  if (!voterQuery.data || !globalQuery.data) return 0;
-  return calculateClaimableRewards(voterQuery.data, globalQuery.data);
-}, [voterQuery.data, globalQuery.data]);
+The simplified calculation becomes:
+```
+reward = voters_bucket * (voter_voteshare / total_voteshare)
 ```
 
-### 4. Remove Balance Query
+## Why This Works
 
-The `fetchWaxBalance` query becomes unnecessary since we're calculating rewards, not reading balance.
-
-## File Changes Summary
-
-| File | Changes |
-|------|---------|
-| `src/lib/waxApi.ts` | Add `GlobalState` interface, `fetchGlobalState()` function, and `calculateClaimableRewards()` function |
-| `src/hooks/useWaxData.ts` | Add global state query, replace balance with calculated rewards |
+| Operation | float64 | BigInt |
+|-----------|---------|--------|
+| Max safe integer | 9 x 10^15 | Unlimited |
+| Voteshare digits | 48-55 | Handles all |
+| Precision loss | Severe | None for integers |
+| Ratio calculation | Wrong | Accurate |
 
 ## Expected Result
 
-After implementation:
-- The UI will show the actual **claimable vote rewards** (e.g., `~2.61 WAX` based on the `unpaid_voteshare` data)
-- This value will update in real-time as rewards accrue
-- The estimated CHEESE burn will reflect the actual claimable amount
+After this fix:
+- Claimable WAX should show `~3-4 WAX` (based on cheeseburner's voteshare proportion)
+- CHEESE estimate should be accurate based on pool price
+- Values will update correctly on refresh
+
+## File Changes
+
+| File | Changes |
+|------|---------|
+| `src/lib/waxApi.ts` | Rewrite `calculateClaimableRewards()` to use BigInt for large number handling |
 
 ## Technical Notes
 
-- Vote rewards are stored as very large numbers in scientific notation (e.g., `2607965791245850486182639982333015706660943953920.00000000`)
-- The `voters_bucket` is stored as an int64 in base units (10^8 precision for WAX's 8 decimal places)
-- Time calculations use microseconds in the contract but we'll work with milliseconds/seconds in JS
+- `BigInt` is natively supported in all modern browsers
+- We only use BigInt for the ratio calculation, then convert back to Number for the final WAX amount
+- The `voters_bucket` itself fits in a standard Number (15 digits)
+- Time-elapsed adjustments can be added later for real-time accrual display
 
