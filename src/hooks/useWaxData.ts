@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
-  fetchWaxBalance, 
   fetchAlcorPoolPrice, 
   fetchVoterInfo,
+  fetchGlobalState,
   calculateCheesePerWax,
+  calculateClaimableRewards,
   getTimeUntilNextClaim,
   canClaim as checkCanClaim,
 } from '@/lib/waxApi';
@@ -29,14 +30,6 @@ interface WaxData {
 export function useWaxData(): WaxData {
   const [timeUntilNextClaim, setTimeUntilNextClaim] = useState<number>(0);
 
-  // Fetch WAX balance from eosio.token accounts table
-  const balanceQuery = useQuery({
-    queryKey: ['waxBalance', CHEESEBURNER_ACCOUNT],
-    queryFn: () => fetchWaxBalance(CHEESEBURNER_ACCOUNT),
-    refetchInterval: REFRESH_INTERVAL,
-    staleTime: 10000,
-  });
-
   // Fetch Alcor pool price data
   const poolQuery = useQuery({
     queryKey: ['alcorPool', ALCOR_POOL_ID],
@@ -45,10 +38,18 @@ export function useWaxData(): WaxData {
     staleTime: 10000,
   });
 
-  // Fetch voter info for last_claim_time
+  // Fetch voter info for last_claim_time and unpaid_voteshare
   const voterQuery = useQuery({
     queryKey: ['voterInfo', CHEESEBURNER_ACCOUNT],
     queryFn: () => fetchVoterInfo(CHEESEBURNER_ACCOUNT),
+    refetchInterval: REFRESH_INTERVAL,
+    staleTime: 10000,
+  });
+
+  // Fetch global state for voters_bucket and total_unpaid_voteshare
+  const globalQuery = useQuery({
+    queryKey: ['globalState'],
+    queryFn: () => fetchGlobalState(),
     refetchInterval: REFRESH_INTERVAL,
     staleTime: 10000,
   });
@@ -69,16 +70,20 @@ export function useWaxData(): WaxData {
     return () => clearInterval(interval);
   }, [lastClaimTime]);
 
-  // Calculate values using pool reserves
-  const claimableWax = balanceQuery.data ?? 0;
+  // Calculate claimable rewards from voter and global state
+  const claimableWax = useMemo(() => {
+    if (!voterQuery.data || !globalQuery.data) return 0;
+    return calculateClaimableRewards(voterQuery.data, globalQuery.data);
+  }, [voterQuery.data, globalQuery.data]);
+
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   const estimatedCheese = claimableWax * cheesePerWax;
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
   const refetch = () => {
-    balanceQuery.refetch();
     poolQuery.refetch();
     voterQuery.refetch();
+    globalQuery.refetch();
   };
 
   return {
@@ -88,9 +93,9 @@ export function useWaxData(): WaxData {
     canClaim,
     timeUntilNextClaim,
     lastClaimTime,
-    isLoading: balanceQuery.isLoading || poolQuery.isLoading || voterQuery.isLoading,
-    isError: balanceQuery.isError || poolQuery.isError || voterQuery.isError,
-    error: balanceQuery.error || poolQuery.error || voterQuery.error,
+    isLoading: poolQuery.isLoading || voterQuery.isLoading || globalQuery.isLoading,
+    isError: poolQuery.isError || voterQuery.isError || globalQuery.isError,
+    error: poolQuery.error || voterQuery.error || globalQuery.error,
     refetch,
   };
 }

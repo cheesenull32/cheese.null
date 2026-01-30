@@ -22,6 +22,13 @@ export interface VoterData {
   reserved3: string;
 }
 
+export interface GlobalState {
+  voters_bucket: string;
+  total_voteshare_change_rate: string;
+  total_unpaid_voteshare: string;
+  total_unpaid_voteshare_last_updated: string;
+}
+
 export interface AlcorPoolData {
   id: number;
   tokenA: {
@@ -193,4 +200,71 @@ export function formatCountdown(ms: number): string {
   const seconds = Math.floor((ms % (1000 * 60)) / 1000);
   
   return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+// Fetch global state from eosio global table
+export async function fetchGlobalState(): Promise<GlobalState | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code: 'eosio',
+        scope: 'eosio',
+        table: 'global',
+        limit: 1,
+        json: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`WAX API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.rows && data.rows.length > 0) {
+      return data.rows[0] as GlobalState;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching global state:', error);
+    throw error;
+  }
+}
+
+// Calculate claimable vote rewards from voter and global state
+export function calculateClaimableRewards(
+  voterData: VoterData,
+  globalState: GlobalState
+): number {
+  const now = Date.now();
+  
+  // Parse voter's voteshare data
+  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
+  const voterTimeElapsed = (now - voterLastUpdated) / 1000; // seconds
+  const voterVoteshare = parseFloat(voterData.unpaid_voteshare) + 
+    parseFloat(voterData.unpaid_voteshare_change_rate) * voterTimeElapsed;
+  
+  // Parse global voteshare data  
+  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
+  const globalTimeElapsed = (now - globalLastUpdated) / 1000;
+  const globalVoteshare = parseFloat(globalState.total_unpaid_voteshare) + 
+    parseFloat(globalState.total_voteshare_change_rate) * globalTimeElapsed;
+  
+  if (globalVoteshare === 0) return 0;
+  
+  // Calculate reward: voters_bucket * (voter_share / total_share)
+  // voters_bucket is stored as "X WAX" string, parse the number
+  const votersBucketStr = globalState.voters_bucket;
+  const votersBucket = typeof votersBucketStr === 'string' && votersBucketStr.includes(' ')
+    ? parseFloat(votersBucketStr.split(' ')[0])
+    : parseFloat(votersBucketStr);
+  
+  const reward = votersBucket * (voterVoteshare / globalVoteshare);
+  
+  return reward;
 }
