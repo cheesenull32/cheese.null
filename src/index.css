@@ -7,41 +7,41 @@
     --background: 0 0% 4%;
     --foreground: 0 0% 98%;
 
-    --card: 0 0% 7%;
+    --card: 45 20% 6%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 0 0% 7%;
+    --popover: 45 20% 6%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 24 100% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 45 100% 50%;
+    --primary-foreground: 0 0% 10%;
 
-    --secondary: 0 0% 12%;
+    --secondary: 40 15% 12%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 40 10% 15%;
+    --muted-foreground: 45 20% 65%;
 
-    --accent: 12 100% 55%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 48 95% 60%;
+    --accent-foreground: 0 0% 10%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 24 100% 50%;
+    --border: 45 20% 18%;
+    --input: 45 15% 18%;
+    --ring: 45 100% 50%;
 
     --radius: 0.75rem;
 
-    /* Custom fire colors */
-    --fire-orange: 24 100% 50%;
-    --fire-red: 0 85% 50%;
-    --fire-yellow: 40 100% 55%;
-    --ember: 15 100% 40%;
+    /* Custom cheese colors */
+    --cheese: 45 100% 50%;
+    --cheese-light: 48 95% 60%;
+    --cheese-dark: 40 90% 40%;
+    --cheese-cream: 45 50% 85%;
 
     /* Glow effects */
-    --glow-orange: 0 0% 0% / 0;
+    --glow-cheese: 45 100% 50%;
     --glow-intensity: 30px;
   }
 }
@@ -57,65 +57,66 @@
 }
 
 @layer utilities {
-  .fire-glow {
+  .cheese-glow {
     box-shadow: 
-      0 0 20px hsl(24 100% 50% / 0.4),
-      0 0 40px hsl(24 100% 50% / 0.2),
-      0 0 60px hsl(0 85% 50% / 0.1);
+      0 0 20px hsl(45 100% 50% / 0.4),
+      0 0 40px hsl(45 100% 50% / 0.2),
+      0 0 60px hsl(48 95% 60% / 0.1);
   }
 
-  .fire-glow-intense {
+  .cheese-glow-intense {
     box-shadow: 
-      0 0 30px hsl(24 100% 50% / 0.6),
-      0 0 60px hsl(24 100% 50% / 0.4),
-      0 0 90px hsl(0 85% 50% / 0.2),
-      inset 0 0 20px hsl(40 100% 55% / 0.1);
+      0 0 30px hsl(45 100% 50% / 0.6),
+      0 0 60px hsl(45 100% 50% / 0.4),
+      0 0 90px hsl(48 95% 60% / 0.2),
+      inset 0 0 20px hsl(48 95% 60% / 0.1);
   }
 
-  .text-fire-gradient {
+  .text-cheese-gradient {
     background: linear-gradient(
       180deg,
-      hsl(40 100% 55%) 0%,
-      hsl(24 100% 50%) 50%,
-      hsl(0 85% 50%) 100%
+      hsl(48 95% 60%) 0%,
+      hsl(45 100% 50%) 50%,
+      hsl(40 90% 40%) 100%
     );
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  .bg-fire-gradient {
+  .bg-cheese-gradient {
     background: linear-gradient(
       135deg,
-      hsl(24 100% 50%) 0%,
-      hsl(0 85% 50%) 100%
+      hsl(48 95% 60%) 0%,
+      hsl(45 100% 50%) 50%,
+      hsl(40 90% 40%) 100%
     );
   }
 
-  .bg-fire-gradient-hover {
+  .bg-cheese-gradient-hover {
     background: linear-gradient(
       135deg,
-      hsl(40 100% 55%) 0%,
-      hsl(24 100% 50%) 50%,
-      hsl(0 85% 50%) 100%
+      hsl(50 100% 65%) 0%,
+      hsl(48 95% 60%) 50%,
+      hsl(45 100% 50%) 100%
     );
   }
 }
 
-@keyframes pulse-fire {
+@keyframes pulse-cheese {
   0%, 100% {
     box-shadow: 
-      0 0 20px hsl(24 100% 50% / 0.4),
-      0 0 40px hsl(24 100% 50% / 0.2);
+      0 0 20px hsl(45 100% 50% / 0.4),
+      0 0 40px hsl(45 100% 50% / 0.2);
   }
   50% {
     box-shadow: 
-      0 0 30px hsl(24 100% 50% / 0.6),
-      0 0 60px hsl(24 100% 50% / 0.3),
-      0 0 80px hsl(0 85% 50% / 0.2);
+      0 0 30px hsl(45 100% 50% / 0.6),
+      0 0 60px hsl(45 100% 50% / 0.3),
+      0 0 80px hsl(48 95% 60% / 0.2);
   }
 }
 
-.animate-pulse-fire {
-  animation: pulse-fire 2s ease-in-out infinite;
+.animate-pulse-cheese {
+  animation: pulse-cheese 2s ease-in-out infinite;
 }

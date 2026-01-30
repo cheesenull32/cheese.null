@@ -17,14 +17,14 @@ export const BurnButton = () => {
       onMouseLeave={() => setIsPressed(false)}
       className={cn(
         "relative px-16 py-6 rounded-xl",
-        "bg-fire-gradient hover:bg-fire-gradient-hover",
+        "bg-cheese-gradient hover:bg-cheese-gradient-hover",
         "text-primary-foreground font-black text-4xl tracking-widest",
         "transition-all duration-150 ease-out",
-        "animate-pulse-fire hover:fire-glow-intense",
+        "animate-pulse-cheese hover:cheese-glow-intense",
         "active:scale-95",
         "focus:outline-none focus:ring-4 focus:ring-primary/50",
         "select-none cursor-pointer",
-        isPressed && "scale-95 fire-glow-intense"
+        isPressed && "scale-95 cheese-glow-intense"
       )}
     >
       <span className="relative z-10 drop-shadow-lg">BURN</span>
