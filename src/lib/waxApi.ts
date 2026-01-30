@@ -236,35 +236,41 @@ export async function fetchGlobalState(): Promise<GlobalState | null> {
   }
 }
 
+// Helper to parse large decimal strings to BigInt (truncating decimals)
+function parseBigFloat(value: string): bigint {
+  // Remove decimal portion - we only need integer part for ratio
+  const intPart = value.split('.')[0];
+  try {
+    return BigInt(intPart);
+  } catch {
+    return 0n;
+  }
+}
+
 // Calculate claimable vote rewards from voter and global state
+// Uses BigInt for voteshare values (48-55 digits) that exceed float64 precision
 export function calculateClaimableRewards(
   voterData: VoterData,
   globalState: GlobalState
 ): number {
-  const now = Date.now();
+  // Parse voters_bucket (int64, divide by 10^8 for WAX)
+  const votersBucket = parseInt(globalState.voters_bucket, 10) / 100000000;
   
-  // Parse voter's voteshare data
-  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
-  const voterTimeElapsed = (now - voterLastUpdated) / 1000; // seconds
-  const voterVoteshare = parseFloat(voterData.unpaid_voteshare) + 
-    parseFloat(voterData.unpaid_voteshare_change_rate) * voterTimeElapsed;
+  // Parse voteshare values as BigInt (truncate decimal portion)
+  // These numbers are too large for JavaScript floats (48-55 digits)
+  const voterVoteshare = parseBigFloat(voterData.unpaid_voteshare);
+  const totalVoteshare = parseBigFloat(globalState.total_unpaid_voteshare);
   
-  // Parse global voteshare data  
-  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
-  const globalTimeElapsed = (now - globalLastUpdated) / 1000;
-  const globalVoteshare = parseFloat(globalState.total_unpaid_voteshare) + 
-    parseFloat(globalState.total_voteshare_change_rate) * globalTimeElapsed;
+  if (totalVoteshare === 0n) return 0;
   
-  if (globalVoteshare === 0) return 0;
+  // Calculate ratio using scaled integer math
+  // Multiply voter by a large scale, divide by total, then divide by scale
+  const SCALE = 10n ** 18n; // 18 decimal places of precision
+  const ratio = (voterVoteshare * SCALE) / totalVoteshare;
   
-  // Calculate reward: voters_bucket * (voter_share / total_share)
-  // voters_bucket is stored as "X WAX" string, parse the number
-  const votersBucketStr = globalState.voters_bucket;
-  const votersBucket = typeof votersBucketStr === 'string' && votersBucketStr.includes(' ')
-    ? parseFloat(votersBucketStr.split(' ')[0])
-    : parseFloat(votersBucketStr);
-  
-  const reward = votersBucket * (voterVoteshare / globalVoteshare);
+  // Convert ratio back to float and multiply by bucket
+  const ratioFloat = Number(ratio) / Number(SCALE);
+  const reward = votersBucket * ratioFloat;
   
   return reward;
 }
