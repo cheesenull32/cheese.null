@@ -1,132 +1,189 @@
 
 
-# Vote Rewards Cooldown & Accruing Display
+# Anchor Wallet Integration with WharfKit
 
 ## Overview
-Add 24-hour claim cooldown logic to the CHEESE Burner. The burn button will be disabled when claims are on cooldown, and show a countdown timer. The display will show accruing vote rewards that accumulate over time.
+Add WAX blockchain wallet connectivity using WharfKit's SessionKit with the Anchor wallet plugin. Users will be able to connect their wallet and trigger the `burn()` action on the `cheeseburner` smart contract.
 
-## Current State (from blockchain data)
-- Last claim: `2026-01-30T05:52:38.000`
-- Current WAX balance: `0.00000000 WAX` (just claimed)
-- Staked amount: ~342,426 WAX
-- Vote rewards accrue continuously and become claimable after 24 hours
+## User Experience Flow
 
-## UI Changes
-
-### Stats Card Updates
 ```text
-+----------------------------------+
-|     CLAIMABLE VOTE REWARDS       |
-|         0.00000000 WAX           |
-|                                  |
-|      ESTIMATED CHEESE BURN       |
-|            0.0000 CHEESE         |
-|                                  |
-|   ⏱️ Next claim in: 16h 12m 5s   |
-+----------------------------------+
-|     [BURN] (disabled/greyed)     |
-+----------------------------------+
++---------------------------------------+
+|          CHEESE BURNER                |
++---------------------------------------+
+|                                       |
+|    [🔗 Connect Wallet]                |  <-- When not connected
+|                                       |
+|    Claimable Vote Rewards             |
+|         2.60796579 WAX                |
+|                                       |
+|    Estimated CHEESE Burn              |
+|           1.5930 CHEESE               |
+|                                       |
+|    Next claim in: 16h 12m 5s          |
+|                                       |
+|    [BURN] (disabled - no wallet)      |
+|                                       |
++---------------------------------------+
+
+                 ↓ User connects wallet
+
++---------------------------------------+
+|          CHEESE BURNER                |
++---------------------------------------+
+|                                       |
+|    👤 mywaxaccount                    |  <-- Logged in state
+|    [Disconnect]                       |
+|                                       |
+|    Claimable Vote Rewards             |
+|         2.60796579 WAX                |
+|                                       |
+|    Estimated CHEESE Burn              |
+|           1.5930 CHEESE               |
+|                                       |
+|    Ready to claim!                    |
+|                                       |
+|    [BURN] (enabled & clickable)       |
+|                                       |
++---------------------------------------+
 ```
 
-When cooldown expires:
-```text
-+----------------------------------+
-|     CLAIMABLE VOTE REWARDS       |
-|       123.45678900 WAX           |
-|                                  |
-|      ESTIMATED CHEESE BURN       |
-|        75,432.1234 CHEESE        |
-|                                  |
-|        ✅ Ready to claim!        |
-+----------------------------------+
-|           [BURN] (active)        |
-+----------------------------------+
-```
+## Technical Architecture
 
-## Technical Implementation
+### Package Dependencies
+The following npm packages will be added:
+- `@wharfkit/session` - Core session management
+- `@wharfkit/wallet-plugin-anchor` - Anchor wallet integration  
+- `@wharfkit/web-renderer` - Login UI modal
 
-### Files to Modify
+### New Files
 
-**1. `src/lib/waxApi.ts`**
-- Add `fetchVoterData(account: string)` function to get voter table data
-- Returns `last_claim_time`, `staked` amount, and other voter info
+**1. `src/lib/wharfkit.ts`** - WharfKit SessionKit Configuration
+- Initialize SessionKit with WAX mainnet chain configuration
+- Configure Anchor wallet plugin
+- Export the singleton SessionKit instance
 
-**2. `src/hooks/useWaxData.ts`**
-- Add new query for voter data (to get `last_claim_time`)
-- Calculate `timeUntilNextClaim` (24 hours from last_claim_time)
-- Calculate `canClaim` boolean (true if 24 hours passed)
-- Return these values to components
+**2. `src/contexts/WalletContext.tsx`** - React Context for Wallet State
+- Manages wallet connection state across the app
+- Provides: `session`, `isConnected`, `login()`, `logout()`, `transact()`
+- Automatically attempts to restore previous session on mount
 
-**3. `src/components/BurnStats.tsx`**
-- Add countdown timer display showing time until next claim
-- Use `useEffect` with interval to update countdown every second
-- Show "Ready to claim!" when cooldown expires
+**3. `src/components/WalletButton.tsx`** - Connect/Disconnect UI
+- Shows "Connect Wallet" button when not connected
+- Shows account name + "Disconnect" when connected
+- Triggers Anchor login modal on click
 
-**4. `src/components/BurnButton.tsx`**
-- Accept `disabled` prop based on claim cooldown
-- Show disabled styling (greyed out, no glow, no hover effects)
-- Update cursor to `not-allowed` when disabled
+### Modified Files
 
-**5. `src/pages/Index.tsx`**
-- Pass claim status from hook to BurnButton
+**4. `src/App.tsx`**
+- Wrap app with `WalletProvider` context
 
-### Cooldown Logic
+**5. `src/components/BurnButton.tsx`**
+- Use wallet context to check connection
+- Add `onClick` handler that calls `cheeseburner::burn()` action
+- Disable if not connected OR if cooldown active
+- Show loading state during transaction
 
-```typescript
-// Calculate time until next claim
-const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-function getTimeUntilNextClaim(lastClaimTime: string): number {
-  const lastClaim = new Date(lastClaimTime + 'Z').getTime();
-  const nextClaim = lastClaim + CLAIM_COOLDOWN_MS;
-  const now = Date.now();
-  return Math.max(0, nextClaim - now);
-}
-
-function canClaim(lastClaimTime: string): boolean {
-  return getTimeUntilNextClaim(lastClaimTime) === 0;
-}
-```
-
-### Countdown Timer Format
-
-```typescript
-function formatCountdown(ms: number): string {
-  if (ms <= 0) return 'Ready!';
-  
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
-  
-  return `${hours}h ${minutes}m ${seconds}s`;
-}
-```
+**6. `src/pages/Index.tsx`**
+- Add `WalletButton` component to header area
+- Pass wallet connection status to burn logic
 
 ### Data Flow
 
 ```text
-Voters Table                    Hook                    UI
-     |                           |                      |
-     |-- last_claim_time ------->|                      |
-     |                           |-- canClaim --------->|
-     |                           |-- timeRemaining ---->|
-     |                           |                      |
-     |                           |     [Timer updates   |
-     |                           |      every second]   |
+User clicks             WharfKit              Anchor             WAX
+"Connect Wallet"        SessionKit            Wallet            Blockchain
+      |                     |                   |                  |
+      |-- login() --------->|                   |                  |
+      |                     |-- QR/deep link -->|                  |
+      |                     |<-- session -------|                  |
+      |<-- session data ----|                   |                  |
+      |                     |                   |                  |
+      |                     |                   |                  |
+User clicks "BURN"          |                   |                  |
+      |                     |                   |                  |
+      |-- transact() ------>|                   |                  |
+      |                     |-- sign request -->|                  |
+      |                     |<-- signature -----|                  |
+      |                     |-- push tx --------------------------->|
+      |<-- tx result -------|                   |                  |
 ```
 
-## Button States
+## Implementation Details
 
-| State | Appearance | Behavior |
-|-------|------------|----------|
-| Cooldown Active | Grey background, no glow, "not-allowed" cursor | Click does nothing |
-| Ready to Claim | Yellow gradient, pulsing glow, pointer cursor | Click triggers burn |
+### SessionKit Configuration
+
+```typescript
+// src/lib/wharfkit.ts
+import { SessionKit } from '@wharfkit/session';
+import { WebRenderer } from '@wharfkit/web-renderer';
+import { WalletPluginAnchor } from '@wharfkit/wallet-plugin-anchor';
+
+const WAX_CHAIN = {
+  id: '1064487b3cd1a897ce03ae5b6a865651747e2e152090f99c1d19d44e01aea5a4',
+  url: 'https://wax.greymass.com',
+};
+
+export const sessionKit = new SessionKit({
+  appName: 'CHEESE Burner',
+  chains: [WAX_CHAIN],
+  ui: new WebRenderer(),
+  walletPlugins: [new WalletPluginAnchor()],
+});
+```
+
+### Wallet Context
+
+```typescript
+// src/contexts/WalletContext.tsx
+interface WalletContextType {
+  session: Session | null;
+  isConnected: boolean;
+  isLoading: boolean;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  transact: (actions: Action[]) => Promise<TransactResult>;
+}
+```
+
+### Burn Transaction
+
+```typescript
+// When user clicks BURN button
+const burnAction = {
+  account: 'cheeseburner',
+  name: 'burn',
+  authorization: [session.permissionLevel],
+  data: {},  // burn() action takes no parameters
+};
+
+await session.transact({ actions: [burnAction] });
+```
+
+### Button States
+
+| Condition | Button State | Appearance |
+|-----------|-------------|------------|
+| Not connected | Disabled | Grey, "Connect wallet first" |
+| Connected + Cooldown active | Disabled | Grey, shows countdown |
+| Connected + Ready to claim | Enabled | Yellow gradient, clickable |
+| Transaction pending | Disabled | Shows spinner |
 
 ## Implementation Order
 
-1. Update `waxApi.ts` - add `fetchVoterData` function
-2. Update `useWaxData.ts` - add voter query and cooldown calculations
-3. Update `BurnStats.tsx` - add countdown timer display
-4. Update `BurnButton.tsx` - add disabled state styling
-5. Update `Index.tsx` - wire up the disabled state
+1. Install WharfKit packages
+2. Create `src/lib/wharfkit.ts` - SessionKit setup
+3. Create `src/contexts/WalletContext.tsx` - React context
+4. Create `src/components/WalletButton.tsx` - UI component
+5. Update `src/App.tsx` - Add WalletProvider wrapper
+6. Update `src/components/BurnButton.tsx` - Add transaction logic
+7. Update `src/pages/Index.tsx` - Integrate wallet button
+8. Test wallet connection and transaction flow
+
+## Error Handling
+
+- Connection failures: Show toast notification
+- Transaction rejections: User-friendly message ("Transaction cancelled")
+- Network errors: Retry option with error details
+- Session restoration failures: Silent fail, show login button
 
