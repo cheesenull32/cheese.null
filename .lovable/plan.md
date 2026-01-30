@@ -1,230 +1,127 @@
 
-# Burn Incentive: 95% Burn / 5% Caller Reward
+
+# Fix Data Fetching: Show Actual Unclaimed Vote Rewards
 
 ## Overview
-Modify the cheeseburner smart contract to split received CHEESE tokens - 95% burned to `eosio.null` and 5% sent to the account that triggered the burn as a reward incentive.
 
-## Challenge
-The current flow has a timing issue:
-1. User calls `burn()` action (we know who called it here)
-2. Contract claims WAX rewards and swaps for CHEESE
-3. CHEESE arrives via `on_cheese_transfer` notification (we don't know who originally called burn)
+Currently the app displays the `cheeseburner` account's WAX **balance** (which is 0.00000000 WAX) instead of its **unclaimed vote rewards**. This plan adds proper calculation of pending vote rewards using data from the WAX blockchain's `eosio::global` and `eosio::voters` tables.
 
-We need to track the caller from step 1 so it's available in step 3.
+## Current Problem
 
-## Solution: Store Pending Burn Caller
+The app fetches WAX balance from `eosio.token::accounts` table:
+- Returns: `0.00000000 WAX` (the current liquid balance)
+- This is wrong because rewards are **unclaimed** - they're not in the balance yet
 
-Add a table to temporarily store who initiated the burn, then read it when CHEESE arrives.
+## Solution: Calculate Pending Rewards from Blockchain State
 
-## Contract Changes
-
-### 1. Add New Table (cheeseburner.hpp)
-
-```cpp
-// Pending burn caller - stores who initiated the current burn
-TABLE pending_burn_row {
-    name caller;            // Account that called burn()
-    time_point_sec timestamp;  // When burn was initiated
-    
-    uint64_t primary_key() const { return 0; }
-};
-typedef singleton<"pendingburn"_n, pending_burn_row> pending_burn_table;
-```
-
-### 2. Update Stats Table (cheeseburner.hpp)
-
-Add tracking for rewards paid:
-
-```cpp
-TABLE stats_row {
-    uint64_t total_burns;
-    asset total_wax_claimed;
-    asset total_cheese_burned;
-    asset total_cheese_rewards;     // NEW: Total CHEESE paid as rewards
-    
-    uint64_t primary_key() const { return 0; }
-};
-```
-
-### 3. Modify burn() Action (cheeseburner.cpp)
-
-Capture the caller using `get_first_receiver()` or require the caller to pass themselves:
-
-Option A - Require caller parameter:
-```cpp
-ACTION cheeseburner::burn(name caller) {
-    require_auth(caller);  // Caller must sign
-    
-    // Store caller for later use in on_cheese_transfer
-    pending_burn_table pending(get_self(), get_self().value);
-    pending.set({
-        .caller = caller,
-        .timestamp = current_time_point()
-    }, get_self());
-    
-    // ... rest of burn logic
-}
-```
-
-### 4. Update on_cheese_transfer Handler (cheeseburner.cpp)
-
-Split the CHEESE 95/5:
-
-```cpp
-void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string memo) {
-    if (to != get_self() || from == get_self()) return;
-    if (from != ALCOR_SWAP_CONTRACT) {
-        check(false, "This contract only accepts CHEESE from Alcor swaps");
-    }
-
-    check(quantity.symbol == CHEESE_SYMBOL, "Only CHEESE tokens accepted");
-    check(quantity.amount > 0, "Amount must be positive");
-
-    // Get the caller who initiated this burn
-    pending_burn_table pending(get_self(), get_self().value);
-    check(pending.exists(), "No pending burn found");
-    pending_burn_row burn_info = pending.get();
-    
-    // Calculate split: 95% burn, 5% reward
-    int64_t reward_amount = quantity.amount * 5 / 100;  // 5%
-    int64_t burn_amount = quantity.amount - reward_amount;  // 95%
-    
-    asset reward = asset(reward_amount, CHEESE_SYMBOL);
-    asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
-
-    // Send 5% reward to caller
-    if (reward.amount > 0) {
-        action(
-            permission_level{get_self(), "active"_n},
-            CHEESE_CONTRACT,
-            "transfer"_n,
-            make_tuple(
-                get_self(),
-                burn_info.caller,
-                reward,
-                string("Burn reward - thank you for burning CHEESE!")
-            )
-        ).send();
-    }
-
-    // Burn 95%
-    burn_cheese(to_burn);
-
-    // Update statistics
-    update_stats(asset(0, WAX_SYMBOL), to_burn, reward);
-
-    // Clear pending burn
-    pending.remove();
-}
-```
-
-### 5. Add Helper for Reward Transfer (cheeseburner.cpp)
-
-```cpp
-void cheeseburner::send_reward(name recipient, asset quantity) {
-    action(
-        permission_level{get_self(), "active"_n},
-        CHEESE_CONTRACT,
-        "transfer"_n,
-        make_tuple(
-            get_self(),
-            recipient,
-            quantity,
-            string("Burn reward - thank you for burning CHEESE!")
-        )
-    ).send();
-}
-```
-
-### 6. Update update_stats Helper
-
-```cpp
-void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned, asset cheese_reward) {
-    stats_table stats(get_self(), get_self().value);
-    
-    auto itr = stats.find(0);
-    if (itr == stats.end()) {
-        stats.emplace(get_self(), [&](auto& row) {
-            row.total_burns = 1;
-            row.total_wax_claimed = wax_claimed;
-            row.total_cheese_burned = cheese_burned;
-            row.total_cheese_rewards = cheese_reward;
-        });
-    } else {
-        stats.modify(itr, same_payer, [&](auto& row) {
-            row.total_burns += 1;
-            row.total_wax_claimed += wax_claimed;
-            row.total_cheese_burned += cheese_burned;
-            row.total_cheese_rewards += cheese_reward;
-        });
-    }
-}
-```
-
-## Frontend Changes
-
-### Update BurnButton.tsx
-
-Pass the caller's account name to the burn action:
-
-```typescript
-const burnAction = {
-  account: 'cheeseburner',
-  name: 'burn',
-  authorization: [{ 
-    actor: session.actor.toString(),
-    permission: 'active' 
-  }],
-  data: {
-    caller: session.actor.toString()  // NEW: Pass caller
-  },
-};
-```
-
-## Transaction Flow
+WAX vote rewards are calculated using this formula from the system contract:
 
 ```text
-User clicks BURN
-       ↓
-burn(caller) action
-  - require_auth(caller)
-  - Store caller in pendingburn table
-  - Claim WAX vote rewards
-  - Swap WAX → CHEESE via Alcor
-       ↓
-on_cheese_transfer triggered
-  - Read caller from pendingburn table
-  - Calculate: 95% burn, 5% reward
-  - Send 5% CHEESE to caller
-  - Send 95% CHEESE to eosio.null
-  - Update stats (burned + rewards)
-  - Clear pendingburn table
+voter_voteshare = unpaid_voteshare + unpaid_voteshare_change_rate * time_elapsed
+global_voteshare = total_unpaid_voteshare + total_voteshare_change_rate * time_elapsed  
+claimable_wax = voters_bucket * (voter_voteshare / global_voteshare)
 ```
 
-## Example Calculation
+## Data Sources Required
 
-If burn produces 10,000 CHEESE:
-- 9,500 CHEESE → eosio.null (burned forever)
-- 500 CHEESE → caller's wallet (reward)
+| Table | Contract | Scope | Fields Needed |
+|-------|----------|-------|---------------|
+| `global` | eosio | eosio | `voters_bucket`, `total_unpaid_voteshare`, `total_voteshare_change_rate`, `total_unpaid_voteshare_last_updated` |
+| `voters` | eosio | eosio | `unpaid_voteshare`, `unpaid_voteshare_change_rate`, `unpaid_voteshare_last_updated` (already fetched) |
 
-## Files to Modify
+## Implementation Plan
+
+### 1. Add Global State Fetching (`src/lib/waxApi.ts`)
+
+Add new interface and fetch function:
+
+```typescript
+export interface GlobalState {
+  voters_bucket: number;
+  total_voteshare_change_rate: string;
+  total_unpaid_voteshare: string;
+  total_unpaid_voteshare_last_updated: string;
+}
+
+export async function fetchGlobalState(): Promise<GlobalState | null> {
+  // POST to get_table_rows
+  // code: 'eosio', scope: 'eosio', table: 'global', limit: 1
+}
+```
+
+### 2. Add Reward Calculation Function (`src/lib/waxApi.ts`)
+
+```typescript
+export function calculateClaimableRewards(
+  voterData: VoterData,
+  globalState: GlobalState
+): number {
+  const now = Date.now();
+  
+  // Parse voter's voteshare data
+  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
+  const voterTimeElapsed = (now - voterLastUpdated) / 1000; // seconds
+  const voterVoteshare = parseFloat(voterData.unpaid_voteshare) + 
+    parseFloat(voterData.unpaid_voteshare_change_rate) * voterTimeElapsed;
+  
+  // Parse global voteshare data  
+  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
+  const globalTimeElapsed = (now - globalLastUpdated) / 1000;
+  const globalVoteshare = parseFloat(globalState.total_unpaid_voteshare) + 
+    parseFloat(globalState.total_voteshare_change_rate) * globalTimeElapsed;
+  
+  if (globalVoteshare === 0) return 0;
+  
+  // Calculate reward: voters_bucket * (voter_share / total_share)
+  const votersBucket = globalState.voters_bucket;
+  const reward = votersBucket * (voterVoteshare / globalVoteshare);
+  
+  // Convert from internal units (10^8 precision) to WAX
+  return reward / 100000000;
+}
+```
+
+### 3. Update Hook to Fetch Global State (`src/hooks/useWaxData.ts`)
+
+Add a new query for global state and use the calculation:
+
+```typescript
+// Add global state query
+const globalQuery = useQuery({
+  queryKey: ['globalState'],
+  queryFn: () => fetchGlobalState(),
+  refetchInterval: REFRESH_INTERVAL,
+  staleTime: 10000,
+});
+
+// Calculate claimable rewards instead of using balance
+const claimableWax = useMemo(() => {
+  if (!voterQuery.data || !globalQuery.data) return 0;
+  return calculateClaimableRewards(voterQuery.data, globalQuery.data);
+}, [voterQuery.data, globalQuery.data]);
+```
+
+### 4. Remove Balance Query
+
+The `fetchWaxBalance` query becomes unnecessary since we're calculating rewards, not reading balance.
+
+## File Changes Summary
 
 | File | Changes |
 |------|---------|
-| `contracts/cheeseburner.hpp` | Add `pending_burn_row` table, update `stats_row` |
-| `contracts/cheeseburner.cpp` | Update `burn()` to accept caller, split CHEESE in handler |
-| `src/components/BurnButton.tsx` | Pass caller to burn action data |
+| `src/lib/waxApi.ts` | Add `GlobalState` interface, `fetchGlobalState()` function, and `calculateClaimableRewards()` function |
+| `src/hooks/useWaxData.ts` | Add global state query, replace balance with calculated rewards |
 
-## Security Considerations
+## Expected Result
 
-- `require_auth(caller)` ensures only the actual caller can claim the reward
-- Pending burn has timestamp for potential timeout/cleanup
-- Only Alcor swap can trigger the CHEESE handler (existing check)
+After implementation:
+- The UI will show the actual **claimable vote rewards** (e.g., `~2.61 WAX` based on the `unpaid_voteshare` data)
+- This value will update in real-time as rewards accrue
+- The estimated CHEESE burn will reflect the actual claimable amount
 
-## Implementation Order
+## Technical Notes
 
-1. Update header file with new table and stats field
-2. Update burn() action to require and store caller
-3. Update on_cheese_transfer to split CHEESE
-4. Update frontend to pass caller parameter
-5. Recompile and deploy contract
+- Vote rewards are stored as very large numbers in scientific notation (e.g., `2607965791245850486182639982333015706660943953920.00000000`)
+- The `voters_bucket` is stored as an int64 in base units (10^8 precision for WAX's 8 decimal places)
+- Time calculations use microseconds in the contract but we'll work with milliseconds/seconds in JS
+
