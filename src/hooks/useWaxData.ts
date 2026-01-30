@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { 
-  fetchVoterRewards, 
+  fetchWaxBalance, 
   fetchAlcorPoolPrice, 
-  parseUnpaidVoteshare 
+  calculateCheesePerWax 
 } from '@/lib/waxApi';
 
 const CHEESEBURNER_ACCOUNT = 'cheeseburner';
@@ -20,10 +20,10 @@ interface WaxData {
 }
 
 export function useWaxData(): WaxData {
-  // Fetch voter rewards data
-  const voterQuery = useQuery({
-    queryKey: ['voterRewards', CHEESEBURNER_ACCOUNT],
-    queryFn: () => fetchVoterRewards(CHEESEBURNER_ACCOUNT),
+  // Fetch WAX balance from eosio.token accounts table
+  const balanceQuery = useQuery({
+    queryKey: ['waxBalance', CHEESEBURNER_ACCOUNT],
+    queryFn: () => fetchWaxBalance(CHEESEBURNER_ACCOUNT),
     refetchInterval: REFRESH_INTERVAL,
     staleTime: 10000,
   });
@@ -36,16 +36,13 @@ export function useWaxData(): WaxData {
     staleTime: 10000,
   });
 
-  // Calculate values
-  const claimableWax = voterQuery.data 
-    ? parseUnpaidVoteshare(voterQuery.data.unpaid_voteshare) 
-    : 0;
-  
-  const cheesePerWax = poolQuery.data?.priceB ?? 0;
+  // Calculate values using pool reserves
+  const claimableWax = balanceQuery.data ?? 0;
+  const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   const estimatedCheese = claimableWax * cheesePerWax;
 
   const refetch = () => {
-    voterQuery.refetch();
+    balanceQuery.refetch();
     poolQuery.refetch();
   };
 
@@ -53,9 +50,9 @@ export function useWaxData(): WaxData {
     claimableWax,
     estimatedCheese,
     cheesePerWax,
-    isLoading: voterQuery.isLoading || poolQuery.isLoading,
-    isError: voterQuery.isError || poolQuery.isError,
-    error: voterQuery.error || poolQuery.error,
+    isLoading: balanceQuery.isLoading || poolQuery.isLoading,
+    isError: balanceQuery.isError || poolQuery.isError,
+    error: balanceQuery.error || poolQuery.error,
     refetch,
   };
 }

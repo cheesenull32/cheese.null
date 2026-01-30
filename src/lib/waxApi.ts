@@ -54,7 +54,7 @@ export interface AlcorPoolData {
   tvlUSD: number;
 }
 
-export async function fetchVoterRewards(account: string): Promise<VoterData | null> {
+export async function fetchWaxBalance(account: string): Promise<number> {
   try {
     const response = await fetch(WAX_API_ENDPOINT, {
       method: 'POST',
@@ -62,12 +62,10 @@ export async function fetchVoterRewards(account: string): Promise<VoterData | nu
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        code: 'eosio',
-        scope: 'eosio',
-        table: 'voters',
-        lower_bound: account,
-        upper_bound: account,
-        limit: 1,
+        code: 'eosio.token',
+        scope: account,
+        table: 'accounts',
+        limit: 10,
         json: true,
       }),
     });
@@ -79,12 +77,17 @@ export async function fetchVoterRewards(account: string): Promise<VoterData | nu
     const data = await response.json();
     
     if (data.rows && data.rows.length > 0) {
-      return data.rows[0] as VoterData;
+      // Find WAX balance in rows
+      const waxRow = data.rows.find((row: { balance: string }) => row.balance.includes('WAX'));
+      if (waxRow) {
+        // Parse "2.60796579 WAX" -> 2.60796579
+        return parseFloat(waxRow.balance.split(' ')[0]);
+      }
     }
     
-    return null;
+    return 0;
   } catch (error) {
-    console.error('Error fetching voter rewards:', error);
+    console.error('Error fetching WAX balance:', error);
     throw error;
   }
 }
@@ -105,18 +108,16 @@ export async function fetchAlcorPoolPrice(poolId: number): Promise<AlcorPoolData
   }
 }
 
-// Calculate claimable WAX from unpaid_voteshare
-// The unpaid_voteshare is a complex calculation involving time and vote weight
-// For display purposes, we show the raw value divided by precision
-export function parseUnpaidVoteshare(voteshare: string): number {
-  // unpaid_voteshare is stored as a high precision number
-  // We need to convert it to WAX amount
-  const value = parseFloat(voteshare);
-  if (isNaN(value)) return 0;
+// Calculate CHEESE per WAX from pool reserves
+export function calculateCheesePerWax(poolData: AlcorPoolData): number {
+  // tokenA is CHEESE, tokenB is WAX based on pool 1252
+  const cheeseReserve = parseFloat(poolData.tokenA.quantity.toString());
+  const waxReserve = parseFloat(poolData.tokenB.quantity.toString());
   
-  // The actual claimable amount depends on global vote pay calculations
-  // This is an approximation for display purposes
-  return value;
+  if (waxReserve === 0) return 0;
+  
+  // CHEESE you get per 1 WAX
+  return cheeseReserve / waxReserve;
 }
 
 // Format WAX amount with proper precision
