@@ -3,6 +3,8 @@
 const WAX_API_ENDPOINT = 'https://wax.api.eosnation.io/v1/chain/get_table_rows';
 const ALCOR_API_ENDPOINT = 'https://wax.alcor.exchange/api/v2/swap/pools';
 
+export const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 export interface VoterData {
   owner: string;
   proxy: string;
@@ -131,4 +133,64 @@ export function formatCheeseAmount(amount: number): string {
     minimumFractionDigits: 4,
     maximumFractionDigits: 4,
   });
+}
+
+// Fetch voter info from eosio voters table
+export async function fetchVoterInfo(account: string): Promise<VoterData | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code: 'eosio',
+        scope: 'eosio',
+        table: 'voters',
+        lower_bound: account,
+        upper_bound: account,
+        limit: 1,
+        json: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`WAX API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.rows && data.rows.length > 0) {
+      return data.rows[0] as VoterData;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching voter info:', error);
+    throw error;
+  }
+}
+
+// Calculate time until next claim (in milliseconds)
+export function getTimeUntilNextClaim(lastClaimTime: string): number {
+  const lastClaim = new Date(lastClaimTime + 'Z').getTime();
+  const nextClaim = lastClaim + CLAIM_COOLDOWN_MS;
+  const now = Date.now();
+  return Math.max(0, nextClaim - now);
+}
+
+// Check if claim is available
+export function canClaim(lastClaimTime: string): boolean {
+  return getTimeUntilNextClaim(lastClaimTime) === 0;
+}
+
+// Format countdown for display
+export function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Ready!';
+  
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+  
+  return `${hours}h ${minutes}m ${seconds}s`;
 }
