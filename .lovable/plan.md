@@ -1,156 +1,139 @@
 
-# CHEESE Burner Smart Contract
+
+# CHEESE Burner UI Enhancement
 
 ## Overview
-This plan creates a WAX blockchain smart contract called **cheeseburner** that performs three actions when triggered:
-1. Claims the contract's vote rewards from the WAX system
-2. Swaps the claimed WAX for CHEESE on Alcor Exchange (pool 1252)
-3. Burns the CHEESE by sending it to `eosio.null`
+Update the UI to display real-time WAX blockchain data: claimable vote rewards and estimated CHEESE purchase amount, with a dark theme featuring cheesy yellow undertones.
 
-## Contract Logic Flow
+## Visual Design Changes
 
+### Color Palette Update
+Transform from fire-orange to cheese-yellow theme while keeping the dark background:
+
+| Element | Current | New |
+|---------|---------|-----|
+| Primary | `hsl(24 100% 50%)` (orange) | `hsl(45 100% 50%)` (golden yellow) |
+| Accent | `hsl(12 100% 55%)` (red-orange) | `hsl(48 95% 60%)` (bright cheese) |
+| Secondary glow | Red/orange | Warm yellow/gold |
+| Background | `hsl(0 0% 4%)` (dark) | Keep dark |
+| Button gradient | Orange to red | Yellow to gold |
+
+### Updated Button Styling
+- Replace fire gradient with cheese-yellow gradient
+- Update glow effects to golden/yellow tones
+- Keep the pulsing animation but in yellow hues
+
+## New UI Components
+
+### Stats Display Card
+Add a card above the button showing:
 ```text
-┌─────────────────────┐
-│   User presses      │
-│   BURN button       │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Call "burn" action │
-│  (anyone can call)  │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Claim vote rewards │
-│  from eosio voters  │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Check WAX balance  │
-│  (must have WAX)    │
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Swap WAX → CHEESE  │
-│  via Alcor pool 1252│
-└──────────┬──────────┘
-           │
-           ▼
-┌─────────────────────┐
-│  Transfer CHEESE to │
-│  eosio.null (burn)  │
-└─────────────────────┘
++----------------------------------+
+|     CLAIMABLE VOTE REWARDS       |
+|         123.45678900 WAX         |
+|                                  |
+|      ESTIMATED CHEESE BURN       |
+|        75,432.1234 CHEESE        |
++----------------------------------+
+|           [BURN] button          |
++----------------------------------+
 ```
 
-## Files to Create
-
-### 1. `contracts/cheeseburner.hpp` - Header File
-Contains contract definitions including:
-- **Constants**: Token contracts, symbols, Alcor swap contract, burn account
-- **Tables**:
-  - `configrow` - Admin settings (Alcor pool ID, enabled flag)
-  - `stats_row` - Track total burns, WAX claimed, CHEESE burned
-  - `alcor_pool` - Read Alcor AMM pool data (external table)
-  - `token_account` - Read token balances (external table)
-- **Actions**:
-  - `setconfig` - Admin configuration
-  - `burn` - Main action that claims, swaps, and burns
-  - `logburn` - Notification action for transaction history
-
-### 2. `contracts/cheeseburner.cpp` - Implementation File
-Contains:
-- **`setconfig` action** - Set admin and pool configuration
-- **`burn` action** - Main logic:
-  1. Claim vote rewards via `eosio::claimgbmvote` action
-  2. Read contract's WAX balance
-  3. Read Alcor pool 1252 to calculate swap rate
-  4. Send WAX to Alcor with swap memo
-  5. Wait for CHEESE via transfer notification
-- **`on_cheese_transfer` handler** - When CHEESE arrives, burn it
-- **Helper functions**:
-  - `get_wax_cheese_rate()` - Read pool reserves
-  - `burn_cheese()` - Send CHEESE to eosio.null
-  - `update_stats()` - Track statistics
-
-## Key Technical Details
-
-### Vote Reward Claiming
-```cpp
-action(
-    permission_level{get_self(), "active"_n},
-    "eosio"_n,
-    "claimgbmvote"_n,
-    make_tuple(get_self())
-).send();
+### Data Flow
+```text
+Frontend                      WAX Blockchain APIs
+   |                                  |
+   |----> Fetch voters table -------->|
+   |<---- unpaid_voteshare ----------|
+   |                                  |
+   |----> Fetch Alcor pool 1252 ---->|
+   |<---- price data ----------------|
+   |                                  |
+   | Calculate: WAX * price = CHEESE |
+   | Display both values             |
 ```
 
-### Alcor Swap (Pool 1252)
-The swap is done by sending WAX to `swap.alcor` with a memo specifying the pool and minimum output:
-```cpp
-// Memo format: "swap,<min_output>,<pool_id>"
-string memo = "swap,0,1252";
+## Technical Implementation
 
-action(
-    permission_level{get_self(), "active"_n},
-    "eosio.token"_n,
-    "transfer"_n,
-    make_tuple(
-        get_self(),           // from
-        "swap.alcor"_n,       // to
-        wax_amount,           // quantity
-        memo                  // swap memo
-    )
-).send();
+### Files to Create/Modify
+
+1. **`src/hooks/useWaxData.ts`** - New custom hook
+   - Fetches claimable WAX from eosio voters table
+   - Fetches WAX/CHEESE price from Alcor pool 1252 API
+   - Returns: `{ claimableWax, estimatedCheese, isLoading, error, refetch }`
+
+2. **`src/lib/waxApi.ts`** - New API utilities
+   - `fetchVoterRewards(account: string)` - Query WAX voters table
+   - `fetchAlcorPoolPrice(poolId: number)` - Get current price from Alcor
+
+3. **`src/components/BurnButton.tsx`** - Update styling
+   - Replace fire colors with cheese yellow colors
+   - Add loading states
+
+4. **`src/components/BurnStats.tsx`** - New component
+   - Display claimable WAX amount
+   - Display estimated CHEESE burn amount
+   - Auto-refresh data periodically
+
+5. **`src/pages/Index.tsx`** - Update layout
+   - Add BurnStats component above button
+   - Update page title/description
+
+6. **`src/index.css`** - Update color variables
+   - Replace fire colors with cheese yellow palette
+   - Update glow effects to yellow tones
+
+### API Integration Details
+
+**Fetching Claimable Vote Rewards:**
+```typescript
+// POST to WAX API endpoint
+const response = await fetch('https://wax.api.eosnation.io/v1/chain/get_table_rows', {
+  method: 'POST',
+  body: JSON.stringify({
+    code: 'eosio',
+    scope: 'eosio', 
+    table: 'voters',
+    lower_bound: 'cheeseburner',
+    upper_bound: 'cheeseburner',
+    limit: 1,
+    json: true
+  })
+});
 ```
 
-### Burning CHEESE
-Same pattern as the cheesepowerz contract:
-```cpp
-action(
-    permission_level{get_self(), "active"_n},
-    CHEESE_CONTRACT,
-    "transfer"_n,
-    make_tuple(
-        get_self(),
-        "eosio.null"_n,
-        quantity,
-        string("CHEESE burned")
-    )
-).send();
+**Fetching Alcor Pool 1252 Price:**
+```typescript
+// GET request to Alcor API
+const response = await fetch('https://wax.alcor.exchange/api/v2/swap/pools/1252');
+// Returns priceB = 0.609737 (CHEESE per WAX)
 ```
 
-### Handling the Swap Response
-When Alcor sends CHEESE back, we catch it with a notification handler:
-```cpp
-[[eosio::on_notify("cheeseburger::transfer")]]
-void on_cheese_transfer(name from, name to, asset quantity, string memo);
+**Calculation:**
+```typescript
+const estimatedCheese = claimableWax * alcorPool.priceB;
 ```
 
-## Statistics Tracking
-The contract will track:
-- Total number of burns
-- Total WAX claimed from voting
-- Total CHEESE purchased and burned
+### Data Refresh Strategy
+- Initial fetch on component mount
+- Auto-refresh every 30 seconds
+- Manual refresh button available
+- React Query for caching and state management
 
-## Configuration Table
-| Field | Type | Description |
-|-------|------|-------------|
-| admin | name | Contract admin account |
-| alcor_pool_id | uint64_t | Alcor pool ID (1252) |
-| enabled | bool | Enable/disable burns |
-| min_wax_to_burn | asset | Minimum WAX required to proceed |
+## Implementation Order
 
-## Usage After Deployment
-1. Deploy contract to `cheeseburner` account
-2. Set permissions: `eosio.code` permission for contract
-3. Run `setconfig` to configure admin and pool ID
-4. Anyone can call `burn` action to trigger the flow
+1. Update CSS color variables (cheese yellow theme)
+2. Create `src/lib/waxApi.ts` with API functions
+3. Create `src/hooks/useWaxData.ts` hook
+4. Create `src/components/BurnStats.tsx` component
+5. Update `src/components/BurnButton.tsx` styling
+6. Update `src/pages/Index.tsx` layout
+7. Test data fetching and display
 
-## Next Steps After Contract Creation
-- Compile with `eosio-cpp`
-- Deploy to WAX testnet for testing
-- Update frontend BurnButton to call the contract action
+## Technical Notes
+
+- The cheeseburner account must be voting for BPs to earn vote rewards
+- Alcor pool 1252 is the WAX/CHEESE trading pair
+- Price data from Alcor is in real-time but may have slight variance from actual swap execution
+- The `claimgbmvote` action requires the account to have staked WAX and be actively voting
+
