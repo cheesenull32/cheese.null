@@ -1,12 +1,21 @@
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle } from 'lucide-react';
 import { useWaxData } from '@/hooks/useWaxData';
-import { formatWaxAmount, formatCheeseAmount } from '@/lib/waxApi';
+import { formatWaxAmount, formatCheeseAmount, formatCountdown } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
-export const BurnStats = () => {
-  const { claimableWax, estimatedCheese, isLoading, isError, refetch } = useWaxData();
+interface BurnStatsProps {
+  onCanClaimChange?: (canClaim: boolean) => void;
+}
+
+export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
+  const { claimableWax, estimatedCheese, canClaim, timeUntilNextClaim, isLoading, isError, refetch } = useWaxData();
+
+  // Notify parent of canClaim changes
+  if (onCanClaimChange) {
+    onCanClaimChange(canClaim);
+  }
 
   return (
     <Card className="w-full max-w-md bg-card/80 backdrop-blur border-cheese/20 cheese-glow">
@@ -43,6 +52,28 @@ export const BurnStats = () => {
             <p className="text-3xl font-bold text-cheese-gradient">
               {formatCheeseAmount(estimatedCheese)} <span className="text-lg text-muted-foreground">CHEESE</span>
             </p>
+          )}
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-cheese/10" />
+
+        {/* Cooldown Status */}
+        <div className="text-center space-y-2">
+          {isLoading ? (
+            <Skeleton className="h-6 w-40 mx-auto bg-muted" />
+          ) : canClaim ? (
+            <div className="flex items-center justify-center gap-2 text-green-500">
+              <CheckCircle className="w-4 h-4" />
+              <span className="text-sm font-semibold">Ready to claim!</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              <span className="text-sm">
+                Next claim in: <span className="font-mono font-semibold text-cheese">{formatCountdown(timeUntilNextClaim)}</span>
+              </span>
+            </div>
           )}
         </div>
 
