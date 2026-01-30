@@ -1,106 +1,132 @@
 
 
-# Fix WAX Display and CHEESE Price Calculation
+# Vote Rewards Cooldown & Accruing Display
 
-## Issues Identified
+## Overview
+Add 24-hour claim cooldown logic to the CHEESE Burner. The burn button will be disabled when claims are on cooldown, and show a countdown timer. The display will show accruing vote rewards that accumulate over time.
 
-1. **WAX Amount is Wrong**: The `unpaid_voteshare` field from the voters table is an internal accounting number (huge value like `2607965791245850486182639982333015706660943953920`), not the actual claimable WAX. We need to fetch the contract's WAX balance or use a different calculation method.
+## Current State (from blockchain data)
+- Last claim: `2026-01-30T05:52:38.000`
+- Current WAX balance: `0.00000000 WAX` (just claimed)
+- Staked amount: ~342,426 WAX
+- Vote rewards accrue continuously and become claimable after 24 hours
 
-2. **Price Calculation**: The current code uses `priceB` from Alcor API which is actually correct (CHEESE per WAX), but we should also calculate from reserves like the cheesepowerz contract does for accuracy.
+## UI Changes
 
-## Solution
-
-### 1. Fetch WAX Balance Instead of unpaid_voteshare
-
-The actual claimable amount should be fetched from the contract's WAX balance in `eosio.token` accounts table, OR we need to properly calculate the claimable rewards using the global vote pay state.
-
-For simplicity, let's fetch the WAX balance of the cheeseburner account:
-
-```typescript
-// Fetch WAX balance from eosio.token accounts table
-const response = await fetch(WAX_API_ENDPOINT, {
-  method: 'POST',
-  body: JSON.stringify({
-    code: 'eosio.token',
-    scope: 'cheeseburner',
-    table: 'accounts',
-    limit: 10,
-    json: true
-  })
-});
+### Stats Card Updates
+```text
++----------------------------------+
+|     CLAIMABLE VOTE REWARDS       |
+|         0.00000000 WAX           |
+|                                  |
+|      ESTIMATED CHEESE BURN       |
+|            0.0000 CHEESE         |
+|                                  |
+|   ⏱️ Next claim in: 16h 12m 5s   |
++----------------------------------+
+|     [BURN] (disabled/greyed)     |
++----------------------------------+
 ```
 
-### 2. Calculate CHEESE Rate from Pool Reserves
-
-Use the same logic as the cheesepowerz contract:
-
-```typescript
-// From Alcor pool data
-const cheeseReserve = poolData.tokenA.quantity; // 78117.7863 CHEESE
-const waxReserve = poolData.tokenB.quantity;    // 128121.07898766 WAX
-
-// CHEESE per WAX (how much CHEESE you get for 1 WAX)
-const cheesePerWax = cheeseReserve / waxReserve;
+When cooldown expires:
+```text
++----------------------------------+
+|     CLAIMABLE VOTE REWARDS       |
+|       123.45678900 WAX           |
+|                                  |
+|      ESTIMATED CHEESE BURN       |
+|        75,432.1234 CHEESE        |
+|                                  |
+|        ✅ Ready to claim!        |
++----------------------------------+
+|           [BURN] (active)        |
++----------------------------------+
 ```
 
-## Files to Modify
+## Technical Implementation
 
-### `src/lib/waxApi.ts`
-- Add `fetchWaxBalance(account: string)` function to get WAX balance
-- Update `parseUnpaidVoteshare` or replace with proper balance fetching
-- Add `calculateCheesePerWax(poolData)` function using reserves
+### Files to Modify
 
-### `src/hooks/useWaxData.ts`
-- Fetch WAX balance instead of voter rewards (or in addition to)
-- Calculate CHEESE rate from pool reserves instead of using `priceB`
+**1. `src/lib/waxApi.ts`**
+- Add `fetchVoterData(account: string)` function to get voter table data
+- Returns `last_claim_time`, `staked` amount, and other voter info
 
-### `src/components/BurnStats.tsx`
-- Ensure WAX displays with 8 decimals (already using `formatWaxAmount`)
+**2. `src/hooks/useWaxData.ts`**
+- Add new query for voter data (to get `last_claim_time`)
+- Calculate `timeUntilNextClaim` (24 hours from last_claim_time)
+- Calculate `canClaim` boolean (true if 24 hours passed)
+- Return these values to components
 
-## Technical Details
+**3. `src/components/BurnStats.tsx`**
+- Add countdown timer display showing time until next claim
+- Use `useEffect` with interval to update countdown every second
+- Show "Ready to claim!" when cooldown expires
 
-### WAX Balance API Call
+**4. `src/components/BurnButton.tsx`**
+- Accept `disabled` prop based on claim cooldown
+- Show disabled styling (greyed out, no glow, no hover effects)
+- Update cursor to `not-allowed` when disabled
+
+**5. `src/pages/Index.tsx`**
+- Pass claim status from hook to BurnButton
+
+### Cooldown Logic
+
 ```typescript
-export async function fetchWaxBalance(account: string): Promise<number> {
-  const response = await fetch(WAX_API_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code: 'eosio.token',
-      scope: account,
-      table: 'accounts',
-      limit: 10,
-      json: true
-    })
-  });
-  
-  const data = await response.json();
-  // Find WAX balance in rows
-  const waxRow = data.rows.find(row => row.balance.includes('WAX'));
-  if (waxRow) {
-    // Parse "2.60796579 WAX" -> 2.60796579
-    return parseFloat(waxRow.balance.split(' ')[0]);
-  }
-  return 0;
+// Calculate time until next claim
+const CLAIM_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function getTimeUntilNextClaim(lastClaimTime: string): number {
+  const lastClaim = new Date(lastClaimTime + 'Z').getTime();
+  const nextClaim = lastClaim + CLAIM_COOLDOWN_MS;
+  const now = Date.now();
+  return Math.max(0, nextClaim - now);
+}
+
+function canClaim(lastClaimTime: string): boolean {
+  return getTimeUntilNextClaim(lastClaimTime) === 0;
 }
 ```
 
-### CHEESE Per WAX Calculation
+### Countdown Timer Format
+
 ```typescript
-export function calculateCheesePerWax(poolData: AlcorPoolData): number {
-  // tokenA is CHEESE, tokenB is WAX based on pool 1252
-  const cheeseReserve = parseFloat(poolData.tokenA.quantity);
-  const waxReserve = parseFloat(poolData.tokenB.quantity);
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'Ready!';
   
-  // CHEESE you get per 1 WAX
-  return cheeseReserve / waxReserve;
+  const hours = Math.floor(ms / (1000 * 60 * 60));
+  const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+  
+  return `${hours}h ${minutes}m ${seconds}s`;
 }
 ```
 
-### Example Calculation
-- WAX Balance: 2.60796579 WAX
-- Pool: 78117.7863 CHEESE / 128121.07898766 WAX = 0.6097 CHEESE/WAX
-- Estimated CHEESE: 2.60796579 * 0.6097 = ~1.59 CHEESE
+### Data Flow
 
-This matches the user's expected value of roughly 1.5930 CHEESE.
+```text
+Voters Table                    Hook                    UI
+     |                           |                      |
+     |-- last_claim_time ------->|                      |
+     |                           |-- canClaim --------->|
+     |                           |-- timeRemaining ---->|
+     |                           |                      |
+     |                           |     [Timer updates   |
+     |                           |      every second]   |
+```
+
+## Button States
+
+| State | Appearance | Behavior |
+|-------|------------|----------|
+| Cooldown Active | Grey background, no glow, "not-allowed" cursor | Click does nothing |
+| Ready to Claim | Yellow gradient, pulsing glow, pointer cursor | Click triggers burn |
+
+## Implementation Order
+
+1. Update `waxApi.ts` - add `fetchVoterData` function
+2. Update `useWaxData.ts` - add voter query and cooldown calculations
+3. Update `BurnStats.tsx` - add countdown timer display
+4. Update `BurnButton.tsx` - add disabled state styling
+5. Update `Index.tsx` - wire up the disabled state
 
