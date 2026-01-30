@@ -42,10 +42,21 @@ public:
     typedef singleton<"config"_n, configrow> config_table;
 
     // Statistics table
+    // Pending burn caller - stores who initiated the current burn
+    TABLE pending_burn_row {
+        name caller;               // Account that called burn()
+        time_point_sec timestamp;  // When burn was initiated
+        
+        uint64_t primary_key() const { return 0; }
+    };
+    typedef singleton<"pendingburn"_n, pending_burn_row> pending_burn_table;
+
+    // Statistics table
     TABLE stats_row {
         uint64_t total_burns;           // Total number of burn transactions
         asset total_wax_claimed;        // Total WAX claimed from voting rewards
         asset total_cheese_burned;      // Total CHEESE burned
+        asset total_cheese_rewards;     // Total CHEESE paid as caller rewards
         
         uint64_t primary_key() const { return 0; }
     };
@@ -84,9 +95,9 @@ public:
         asset min_wax_to_burn
     );
 
-    // Main burn action - anyone can call
-    // Claims vote rewards, swaps WAX for CHEESE, burns CHEESE
-    ACTION burn();
+    // Main burn action - caller receives 5% reward
+    // Claims vote rewards, swaps WAX for CHEESE, burns 95% CHEESE, rewards 5% to caller
+    ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
     // When CHEESE arrives from Alcor swap, burn it
@@ -117,7 +128,7 @@ private:
     void burn_cheese(asset quantity);
 
     // Update statistics
-    void update_stats(asset wax_claimed, asset cheese_burned);
+    void update_stats(asset wax_claimed, asset cheese_burned, asset cheese_reward);
 
     // Get or create default config
     configrow get_config();

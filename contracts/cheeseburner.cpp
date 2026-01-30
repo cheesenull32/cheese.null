@@ -36,11 +36,20 @@ ACTION cheeseburner::setconfig(
     config_singleton.set(new_config, get_self());
 }
 
-ACTION cheeseburner::burn() {
-    // Anyone can call this action - no require_auth needed
+ACTION cheeseburner::burn(name caller) {
+    // Caller must authorize - they will receive 5% reward
+    require_auth(caller);
+    
     // Get and validate config
     configrow config = get_config();
     check(config.enabled, "Burns are currently disabled");
+
+    // Store caller for later use in on_cheese_transfer
+    pending_burn_table pending(get_self(), get_self().value);
+    pending.set({
+        .caller = caller,
+        .timestamp = current_time_point()
+    }, get_self());
 
     // Get WAX balance before claiming
     asset wax_before = get_wax_balance(get_self());
@@ -84,7 +93,7 @@ ACTION cheeseburner::burn() {
     ).send();
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then burn it and log the transaction
+    // which will then split 95% burn / 5% reward to caller
 }
 
 ACTION cheeseburner::logburn(
@@ -119,13 +128,41 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     check(quantity.symbol == CHEESE_SYMBOL, "Only CHEESE tokens accepted");
     check(quantity.amount > 0, "Amount must be positive");
 
-    // Burn the received CHEESE
-    burn_cheese(quantity);
+    // Get the caller who initiated this burn
+    pending_burn_table pending(get_self(), get_self().value);
+    check(pending.exists(), "No pending burn found");
+    pending_burn_row burn_info = pending.get();
+
+    // Calculate split: 95% burn, 5% reward
+    int64_t reward_amount = quantity.amount * 5 / 100;  // 5%
+    int64_t burn_amount = quantity.amount - reward_amount;  // 95%
+    
+    asset reward = asset(reward_amount, CHEESE_SYMBOL);
+    asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
+
+    // Send 5% reward to caller
+    if (reward.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            CHEESE_CONTRACT,
+            "transfer"_n,
+            make_tuple(
+                get_self(),
+                burn_info.caller,
+                reward,
+                string("Burn reward - thank you for burning CHEESE!")
+            )
+        ).send();
+    }
+
+    // Burn 95%
+    burn_cheese(to_burn);
 
     // Update statistics
-    // Note: wax_claimed is approximated as the same as cheese value for now
-    // In a more sophisticated version, we'd track this separately
-    update_stats(asset(0, WAX_SYMBOL), quantity);
+    update_stats(asset(0, WAX_SYMBOL), to_burn, reward);
+
+    // Clear pending burn
+    pending.remove();
 }
 
 // ==================== HELPERS ====================
@@ -197,7 +234,7 @@ void cheeseburner::burn_cheese(asset quantity) {
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned) {
+void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned, asset cheese_reward) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
@@ -206,12 +243,14 @@ void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned) {
             row.total_burns = 1;
             row.total_wax_claimed = wax_claimed;
             row.total_cheese_burned = cheese_burned;
+            row.total_cheese_rewards = cheese_reward;
         });
     } else {
         stats.modify(itr, same_payer, [&](auto& row) {
             row.total_burns += 1;
             row.total_wax_claimed += wax_claimed;
             row.total_cheese_burned += cheese_burned;
+            row.total_cheese_rewards += cheese_reward;
         });
     }
 }
