@@ -10,21 +10,25 @@ interface BurnButtonProps {
 
 export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps) => {
   const [isPressed, setIsPressed] = useState(false);
-  const { isConnected, isTransacting, transact } = useWallet();
+  const { isConnected, isTransacting, transact, session } = useWallet();
 
   const isDisabled = disabled || !isConnected || isTransacting;
 
   const handleClick = async () => {
-    if (isDisabled) return;
+    if (isDisabled || !session) return;
 
+    const callerName = session.actor.toString();
+    
     const burnAction = {
       account: 'cheeseburner',
       name: 'burn',
       authorization: [{ 
-        actor: '', // Will be filled by session
+        actor: callerName,
         permission: 'active' 
       }],
-      data: {},
+      data: {
+        caller: callerName  // Pass caller to receive 5% reward
+      },
     };
 
     const result = await transact([burnAction]);
