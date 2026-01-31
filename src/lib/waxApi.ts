@@ -249,24 +249,44 @@ function parseBigFloat(value: string): bigint {
 
 // Calculate claimable vote rewards from voter and global state
 // Uses BigInt for voteshare values (48-55 digits) that exceed float64 precision
+// Includes time-elapsed accrual matching WAX system contract logic
 export function calculateClaimableRewards(
   voterData: VoterData,
   globalState: GlobalState
 ): number {
+  const now = Date.now();
+  
   // Parse voters_bucket (int64, divide by 10^8 for WAX)
   const votersBucket = parseInt(globalState.voters_bucket, 10) / 100000000;
   
-  // Parse voteshare values as BigInt (truncate decimal portion)
-  // These numbers are too large for JavaScript floats (48-55 digits)
-  const voterVoteshare = parseBigFloat(voterData.unpaid_voteshare);
-  const totalVoteshare = parseBigFloat(globalState.total_unpaid_voteshare);
+  // Calculate time elapsed since last updates (in seconds)
+  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
+  const voterTimeElapsedSec = Math.max(0, (now - voterLastUpdated) / 1000);
   
-  if (totalVoteshare === 0n) return 0;
+  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
+  const globalTimeElapsedSec = Math.max(0, (now - globalLastUpdated) / 1000);
+  
+  // Parse base voteshare values as BigInt
+  const voterBaseVoteshare = parseBigFloat(voterData.unpaid_voteshare);
+  const voterChangeRate = parseBigFloat(voterData.unpaid_voteshare_change_rate);
+  
+  const globalBaseVoteshare = parseBigFloat(globalState.total_unpaid_voteshare);
+  const globalChangeRate = parseBigFloat(globalState.total_voteshare_change_rate);
+  
+  // Calculate time-adjusted voteshares using scaled integer math
+  // voteshare = base + rate * elapsed_seconds (matching contract logic)
+  const voterTimeScaled = BigInt(Math.floor(voterTimeElapsedSec));
+  const globalTimeScaled = BigInt(Math.floor(globalTimeElapsedSec));
+  
+  const voterVoteshare = voterBaseVoteshare + (voterChangeRate * voterTimeScaled);
+  const globalVoteshare = globalBaseVoteshare + (globalChangeRate * globalTimeScaled);
+  
+  if (globalVoteshare === 0n) return 0;
   
   // Calculate ratio using scaled integer math
   // Multiply voter by a large scale, divide by total, then divide by scale
   const SCALE = 10n ** 18n; // 18 decimal places of precision
-  const ratio = (voterVoteshare * SCALE) / totalVoteshare;
+  const ratio = (voterVoteshare * SCALE) / globalVoteshare;
   
   // Convert ratio back to float and multiply by bucket
   const ratioFloat = Number(ratio) / Number(SCALE);
