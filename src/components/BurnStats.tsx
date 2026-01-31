@@ -105,7 +105,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
             <div className="flex items-center justify-center gap-2 text-muted-foreground">
               <Clock className="w-4 h-4" />
               <span className="text-sm">
-                Next claim in: <span className="font-mono font-semibold text-cheese">{formatCountdown(timeUntilNextClaim)}</span>
+                Next null in: <span className="font-mono font-semibold text-cheese">{formatCountdown(timeUntilNextClaim)}</span>
               </span>
             </div>
           )}
