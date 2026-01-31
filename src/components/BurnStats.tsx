@@ -34,7 +34,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
         <div className="text-center space-y-4">
           <div className="space-y-2">
             <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
-              Estimated Cheese Burn
+              Current Estimated $CHEESE Null
             </h3>
             {isLoading ? (
               <Skeleton className="h-10 w-56 mx-auto bg-muted" />
