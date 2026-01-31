@@ -101,8 +101,8 @@ public:
     );
 
     // Main burn action - caller receives 5% reward
-    // Claims vote rewards, stakes 10% to CPU, swaps 90% for CHEESE,
-    // burns 80% value, rewards 5% to caller, sends 5% to xcheeseliqst
+    // Claims vote rewards, stakes 20% to CPU, swaps 80% for CHEESE,
+    // nulls 66% value, rewards 5% to caller, sends 9% to xcheeseliqst
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens

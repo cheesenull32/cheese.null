@@ -68,14 +68,14 @@ ACTION cheeseburner::burn(name caller) {
         ", Need: " + config.min_wax_to_burn.to_string());
     check(wax_balance.amount > 0, "No WAX available to swap");
 
-    // Step 2: Calculate 10% for CPU staking, 90% for swap
-    int64_t stake_amount = wax_balance.amount * 10 / 100;
+    // Step 2: Calculate 20% for CPU staking, 80% for swap
+    int64_t stake_amount = wax_balance.amount * 20 / 100;
     int64_t swap_amount = wax_balance.amount - stake_amount;
     
     asset to_stake = asset(stake_amount, WAX_SYMBOL);
     asset to_swap = asset(swap_amount, WAX_SYMBOL);
 
-    // Step 3: Stake 10% as CPU to self (increases vote weight)
+    // Step 3: Stake 20% as CPU to self (increases vote weight)
     if (to_stake.amount > 0) {
         action(
             permission_level{get_self(), "active"_n},
@@ -91,7 +91,7 @@ ACTION cheeseburner::burn(name caller) {
         ).send();
     }
 
-    // Step 4: Swap remaining 90% for CHEESE via Alcor
+    // Step 4: Swap remaining 80% for CHEESE via Alcor
     // Memo format: "swap,<min_output>,<pool_id>"
     string swap_memo = "swap,0," + to_string(config.alcor_pool_id);
 
@@ -102,13 +102,13 @@ ACTION cheeseburner::burn(name caller) {
         make_tuple(
             get_self(),             // from
             ALCOR_SWAP_CONTRACT,    // to
-            to_swap,                // quantity (90% of WAX)
+            to_swap,                // quantity (80% of WAX)
             swap_memo               // swap instruction
         )
     ).send();
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split ~94.4% burn / ~5.6% reward to caller
+    // which will then split 66% nulled, 5% reward, 9% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
@@ -149,13 +149,13 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     pending_burn_row burn_info = pending.get();
 
     // Calculate split for CHEESE portion
-    // Since we only swapped 90% of WAX, we need:
-    // - Burn: 80/90 ≈ 88.89% of CHEESE (80% of original value)
-    // - Reward: 5/90 ≈ 5.56% of CHEESE (5% of original value)
-    // - Liquidity: 5/90 ≈ 5.56% of CHEESE (5% of original value)
-    int64_t reward_amount = quantity.amount * 5 / 90;     // ~5.56%
-    int64_t liquidity_amount = quantity.amount * 5 / 90;  // ~5.56%
-    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // ~88.89%
+    // Since we only swapped 80% of WAX, we need:
+    // - Null: 66/80 = 82.5% of CHEESE (66% of original value)
+    // - Reward: 5/80 = 6.25% of CHEESE (5% of original value)
+    // - xCHEESE: 9/80 = 11.25% of CHEESE (9% of original value)
+    int64_t reward_amount = quantity.amount * 5 / 80;     // 6.25%
+    int64_t liquidity_amount = quantity.amount * 9 / 80;  // 11.25%
+    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 82.5%
     
     asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);

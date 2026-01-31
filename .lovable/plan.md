@@ -6,12 +6,12 @@
 
 Change the distribution to include a new recipient:
 
-| Allocation | Before | After |
-|------------|--------|-------|
-| WAX Compound (CPU Stake) | 10% | 10% |
-| CHEESE Nulled (Burned) | 85% | 80% |
-| Burner Reward | 5% | 5% |
-| xcheeseliqst | 0% | 5% (new) |
+| Allocation | Current |
+|------------|---------|
+| WAX Compound (CPU Stake) | 20% |
+| CHEESE Nulled | 66% |
+| Burner Reward | 5% |
+| xCHEESE (xcheeseliqst) | 9% |
 
 ## Implementation
 
@@ -167,10 +167,10 @@ Add Droplet icon from lucide-react for the liquidity section.
 
 ## New Distribution Math
 
-**From 90% WAX swapped to CHEESE:**
-- Burned: 80/90 = 88.89% of CHEESE received (equals 80% of original WAX value)
-- Reward: 5/90 = 5.56% of CHEESE received (equals 5% of original WAX value)
-- Liquidity: 5/90 = 5.56% of CHEESE received (equals 5% of original WAX value)
+**From 80% WAX swapped to CHEESE:**
+- Nulled: 66/80 = 82.5% of CHEESE received (equals 66% of original WAX value)
+- Reward: 5/80 = 6.25% of CHEESE received (equals 5% of original WAX value)
+- xCHEESE: 9/80 = 11.25% of CHEESE received (equals 9% of original WAX value)
 
-**Total: 80 + 5 + 5 + 10 = 100% of original value**
+**Total: 66 + 5 + 9 + 20 = 100% of original value**
 
