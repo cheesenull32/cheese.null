@@ -42,11 +42,11 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
       return (
         <span className="flex items-center gap-2">
           <Loader2 className="h-6 w-6 animate-spin" />
-          BURNING...
+          NULLING...
         </span>
       );
     }
-    return "BURN";
+    return "NULL";
   };
 
   const getHintText = () => {
