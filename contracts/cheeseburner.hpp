@@ -23,6 +23,9 @@ static constexpr name ALCOR_SWAP_CONTRACT = "swap.alcor"_n;
 // Burn account
 static constexpr name BURN_ACCOUNT = "eosio.null"_n;
 
+// Liquidity staking account
+static constexpr name CHEESE_LIQ_ACCOUNT = "xcheeseliqst"_n;
+
 // Default Alcor pool ID for WAX/CHEESE
 static constexpr uint64_t DEFAULT_POOL_ID = 1252;
 
@@ -58,6 +61,7 @@ public:
         asset total_wax_staked;         // Total WAX staked as CPU
         asset total_cheese_burned;      // Total CHEESE burned
         asset total_cheese_rewards;     // Total CHEESE paid as caller rewards
+        asset total_cheese_liquidity;   // Total CHEESE sent to xcheeseliqst
         
         uint64_t primary_key() const { return 0; }
     };
@@ -98,7 +102,7 @@ public:
 
     // Main burn action - caller receives 5% reward
     // Claims vote rewards, stakes 10% to CPU, swaps 90% for CHEESE,
-    // burns 94.4% CHEESE, rewards 5.6% to caller
+    // burns 80% value, rewards 5% to caller, sends 5% to xcheeseliqst
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
@@ -130,7 +134,7 @@ private:
     void burn_cheese(asset quantity);
 
     // Update statistics
-    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward);
+    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity);
 
     // Get or create default config
     configrow get_config();
