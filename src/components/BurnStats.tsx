@@ -62,11 +62,11 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
                 <p className="text-xs text-muted-foreground">CHEESE</p>
               </div>
 
-              {/* Liquidity */}
+              {/* xCHEESE */}
               <div className="text-center space-y-1">
                 <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
                   <Droplet className="w-3 h-3" />
-                  <span className="text-xs font-medium">Liquidity</span>
+                  <span className="text-xs font-medium">xCHEESE</span>
                 </div>
                 <p className="text-sm font-semibold text-cheese">
                   {formatCheeseAmount(cheeseLiquidityAmount)}
