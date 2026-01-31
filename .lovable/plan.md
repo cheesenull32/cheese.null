@@ -1,156 +1,255 @@
 
-# Fix Vote Rewards Display: Correct Calculation and Cooldown Timer
+# Modify CHEESE Distribution: Add 10% CPU Staking
 
-## Problem Summary
+## Overview
 
-The current implementation has two issues:
-1. **Wrong reward amount**: Showing incorrect WAX value (not 9.54053854 WAX)
-2. **Wrong claim cooldown timer**: Not showing the correct 12h 51m remaining
+Change the CHEESE distribution when received from Alcor swap:
 
-## Root Cause Analysis
+| Allocation | Before | After |
+|------------|--------|-------|
+| Burned | 95% | 85% |
+| Caller Reward | 5% | 5% |
+| CPU Staking | 0% | 10% (new) |
 
-After reviewing the actual WAX system contract code and comparing with the API response:
+## Technical Approach
 
-### Issue 1: Missing Time-Elapsed Accrual
+The 10% for CPU staking cannot use CHEESE directly - WAX blockchain requires WAX tokens for staking. There are two possible approaches:
 
-The WAX system contract calculates rewards using time-elapsed adjustments for both voter and global voteshare:
+### Option A: Stake WAX Before Swap (Recommended)
+Instead of swapping 100% of claimed WAX for CHEESE, stake 10% as CPU first, then swap the remaining 90% for CHEESE.
+
+**Flow:**
+1. Claim WAX vote rewards
+2. Calculate 10% for CPU staking
+3. Call `eosio::delegatebw` to stake 10% as CPU to self
+4. Swap remaining 90% WAX for CHEESE via Alcor
+5. CHEESE arrives: burn 85/90 (~94.4%) and reward 5/90 (~5.6%)
+
+Wait - this changes the math. Let me recalculate to match your intent:
+
+### Option B: Keep Original Intent (Stake WAX, Split CHEESE)
+To achieve the exact split you described:
+- 85% CHEESE burned
+- 5% CHEESE to caller
+- 10% staked as CPU (requires WAX)
+
+**New Flow:**
+1. Claim WAX vote rewards (e.g., 10 WAX)
+2. Stake 10% of WAX as CPU (1 WAX) → increases vote weight
+3. Swap remaining 90% WAX for CHEESE (9 WAX → ~X CHEESE)
+4. When CHEESE arrives: burn ~94.4% and reward ~5.6%
+
+OR alternatively, to keep CHEESE percentages exact:
+1. Claim WAX vote rewards
+2. Swap 100% WAX for CHEESE
+3. Sell 10% of CHEESE back to WAX (requires extra swap)
+4. Stake that WAX as CPU
+5. Burn 85%, reward 5%
+
+The second sub-option is inefficient (double swap fees). I recommend Option A.
+
+## Recommended Implementation (Option A)
+
+**Percentages of original WAX claimed:**
+- 10% staked as CPU
+- 90% swapped to CHEESE, then:
+  - ~94.44% of CHEESE burned (≈85% of original value)
+  - ~5.56% of CHEESE to caller (≈5% of original value)
+
+### File Changes
+
+#### 1. `contracts/cheeseburner.hpp`
+
+Add new stats tracking field:
+```cpp
+TABLE stats_row {
+    uint64_t total_burns;
+    asset total_wax_claimed;
+    asset total_wax_staked;      // NEW: Track WAX staked as CPU
+    asset total_cheese_burned;
+    asset total_cheese_rewards;
+    
+    uint64_t primary_key() const { return 0; }
+};
+```
+
+Update action documentation:
+```cpp
+// Main burn action - caller receives 5% reward
+// Claims vote rewards, stakes 10% to CPU, swaps 90% for CHEESE,
+// burns 94.4% CHEESE, rewards 5.6% to caller
+ACTION burn(name caller);
+```
+
+#### 2. `contracts/cheeseburner.cpp`
+
+Update `burn()` action to stake CPU before swap:
 
 ```cpp
-// From WAX system contract (voting.cpp lines 2231-2239)
-_gstate.total_unpaid_voteshare += _gstate.total_voteshare_change_rate * double((ct - _gstate.total_unpaid_voteshare_last_updated).count() / 1E6);
+ACTION cheeseburner::burn(name caller) {
+    require_auth(caller);
+    
+    configrow config = get_config();
+    check(config.enabled, "Burns are currently disabled");
 
-double unpaid_voteshare = voter.unpaid_voteshare + voter.unpaid_voteshare_change_rate * double((ct - voter.unpaid_voteshare_last_updated).count() / 1E6);
+    // Store caller for later
+    pending_burn_table pending(get_self(), get_self().value);
+    pending.set({
+        .caller = caller,
+        .timestamp = current_time_point()
+    }, get_self());
 
-int64_t reward = _gstate.voters_bucket * (unpaid_voteshare / _gstate.total_unpaid_voteshare);
-```
+    // Claim vote rewards
+    action(
+        permission_level{get_self(), "active"_n},
+        EOSIO_CONTRACT,
+        "claimgbmvote"_n,
+        make_tuple(get_self())
+    ).send();
 
-The current code skips this time-elapsed calculation, resulting in stale ratios.
+    asset wax_balance = get_wax_balance(get_self());
+    
+    check(wax_balance >= config.min_wax_to_burn, 
+        "Insufficient WAX balance");
+    check(wax_balance.amount > 0, "No WAX available");
 
-### Issue 2: Wrong Timestamp Field for Cooldown
+    // NEW: Calculate 10% for CPU staking
+    int64_t stake_amount = wax_balance.amount * 10 / 100;
+    int64_t swap_amount = wax_balance.amount - stake_amount;
+    
+    asset to_stake = asset(stake_amount, WAX_SYMBOL);
+    asset to_swap = asset(swap_amount, WAX_SYMBOL);
 
-Looking at the API response:
-- `last_claim_time: "2026-01-30T05:52:38.000"` (UTC)
-- `unpaid_voteshare_last_updated: "2026-01-30T12:48:38.000"` (UTC)
+    // NEW: Stake 10% as CPU to self (increases vote weight)
+    if (to_stake.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            EOSIO_CONTRACT,
+            "delegatebw"_n,
+            make_tuple(
+                get_self(),                    // from
+                get_self(),                    // receiver (stake to self)
+                asset(0, WAX_SYMBOL),          // stake_net_quantity (0 NET)
+                to_stake,                      // stake_cpu_quantity (10% WAX)
+                false                          // transfer (keep ownership)
+            )
+        ).send();
+    }
 
-The user reports "Last Voter Claim: Jan 30, 2026, 10:48:38 PM" - which matches `unpaid_voteshare_last_updated` when converted to UTC+10 timezone (12:48 UTC = 22:48 UTC+10).
-
-However, reviewing the contract code at line 2227:
-```cpp
-check( ct - voter.last_claim_time > microseconds(useconds_per_day), "already claimed rewards within past day" );
-```
-
-The `last_claim_time` IS the correct field for cooldown. The discrepancy suggests either:
-- The displayed "last claim" the user sees is from a different source (like a block explorer showing `unpaid_voteshare_last_updated`)
-- OR there's a timezone display issue in the user's reference
-
-Given the user's expected values (12h 51m cooldown, 9.54 WAX), I'll trust those as the target and fix the calculation to match.
-
-## API Data Analysis
-
-From the network response:
-```text
-voters_bucket: 579008553877554 (int64, /10^8 = 5,790,085.54 WAX total bucket)
-
-cheeseburner voter data:
-  unpaid_voteshare: 2607965791245850486182639982333015706660943953920.00000000
-  unpaid_voteshare_change_rate: 106398608648292844680070489412612873223405568.00000000
-  unpaid_voteshare_last_updated: 2026-01-30T12:48:38.000
-
-global state:
-  total_unpaid_voteshare: 4172893534437815523782207539895740159604044524433702912.00000000
-  total_voteshare_change_rate: 2282585988707818422853861135997802717755444559872.00000000
-  total_unpaid_voteshare_last_updated: 2026-01-30T23:57:39.000
-```
-
-## Implementation Plan
-
-### 1. Update `calculateClaimableRewards` with Time-Elapsed Accrual
-
-Add proper time-based accrual for both voter and global voteshare before calculating the ratio:
-
-```typescript
-export function calculateClaimableRewards(
-  voterData: VoterData,
-  globalState: GlobalState
-): number {
-  const now = Date.now();
-  
-  // Parse voters_bucket (int64, divide by 10^8 for WAX)
-  const votersBucket = parseInt(globalState.voters_bucket, 10) / 100000000;
-  
-  // Calculate time elapsed since last updates (in microseconds, matching contract)
-  const voterLastUpdated = new Date(voterData.unpaid_voteshare_last_updated + 'Z').getTime();
-  const voterTimeElapsedSec = (now - voterLastUpdated) / 1000;
-  
-  const globalLastUpdated = new Date(globalState.total_unpaid_voteshare_last_updated + 'Z').getTime();
-  const globalTimeElapsedSec = (now - globalLastUpdated) / 1000;
-  
-  // Parse base voteshare values as BigInt
-  const voterBaseVoteshare = parseBigFloat(voterData.unpaid_voteshare);
-  const voterChangeRate = parseBigFloat(voterData.unpaid_voteshare_change_rate);
-  
-  const globalBaseVoteshare = parseBigFloat(globalState.total_unpaid_voteshare);
-  const globalChangeRate = parseBigFloat(globalState.total_voteshare_change_rate);
-  
-  // Calculate time-adjusted voteshares using scaled integer math
-  // voterVoteshare = base + rate * elapsed_seconds
-  const SCALE = 10n ** 18n;
-  const voterTimeScaled = BigInt(Math.floor(voterTimeElapsedSec));
-  const globalTimeScaled = BigInt(Math.floor(globalTimeElapsedSec));
-  
-  const voterVoteshare = voterBaseVoteshare + (voterChangeRate * voterTimeScaled);
-  const globalVoteshare = globalBaseVoteshare + (globalChangeRate * globalTimeScaled);
-  
-  if (globalVoteshare === 0n) return 0;
-  
-  // Calculate ratio: voter_share / global_share
-  const ratio = (voterVoteshare * SCALE) / globalVoteshare;
-  const ratioFloat = Number(ratio) / Number(SCALE);
-  
-  // Reward = bucket * ratio
-  const reward = votersBucket * ratioFloat;
-  
-  return reward;
+    // Swap remaining 90% for CHEESE
+    string swap_memo = "swap,0," + to_string(config.alcor_pool_id);
+    action(
+        permission_level{get_self(), "active"_n},
+        EOSIO_TOKEN,
+        "transfer"_n,
+        make_tuple(
+            get_self(),
+            ALCOR_SWAP_CONTRACT,
+            to_swap,               // Only 90% of WAX
+            swap_memo
+        )
+    ).send();
 }
 ```
 
-### 2. Verify the Timestamp Field Usage
+Update `on_cheese_transfer()` handler:
 
-The current cooldown timer uses `last_claim_time` which appears correct based on the contract code. However, if the user's reference shows a different "last claim" time, we may need to investigate further.
+```cpp
+void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string memo) {
+    if (to != get_self() || from == get_self()) return;
+    
+    if (from != ALCOR_SWAP_CONTRACT) {
+        check(false, "This contract only accepts CHEESE from Alcor swaps");
+    }
 
-For now, keep using `last_claim_time` for the cooldown calculation since that's what the contract checks.
+    check(quantity.symbol == CHEESE_SYMBOL, "Only CHEESE tokens accepted");
+    check(quantity.amount > 0, "Amount must be positive");
 
-### 3. Update GlobalState Interface
+    pending_burn_table pending(get_self(), get_self().value);
+    check(pending.exists(), "No pending burn found");
+    pending_burn_row burn_info = pending.get();
 
-Add the missing change rate fields that are needed for the calculation:
+    // NEW: Adjusted split for CHEESE portion only
+    // Since we only swapped 90% of WAX, we need:
+    // - Burn: 85/90 ≈ 94.44% of CHEESE
+    // - Reward: 5/90 ≈ 5.56% of CHEESE
+    // Simplified: reward = quantity * 5 / 90, burn = quantity - reward
+    int64_t reward_amount = quantity.amount * 5 / 90;  // ~5.56%
+    int64_t burn_amount = quantity.amount - reward_amount;  // ~94.44%
+    
+    asset reward = asset(reward_amount, CHEESE_SYMBOL);
+    asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
 
-```typescript
-export interface GlobalState {
-  voters_bucket: string;
-  total_voteshare_change_rate: string;
-  total_unpaid_voteshare: string;
-  total_unpaid_voteshare_last_updated: string;
+    // Send reward to caller
+    if (reward.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            CHEESE_CONTRACT,
+            "transfer"_n,
+            make_tuple(
+                get_self(),
+                burn_info.caller,
+                reward,
+                string("Burn reward - thank you for burning CHEESE!")
+            )
+        ).send();
+    }
+
+    // Burn the rest
+    burn_cheese(to_burn);
+
+    // Update statistics (TODO: add wax_staked tracking)
+    update_stats(asset(0, WAX_SYMBOL), to_burn, reward);
+
+    pending.remove();
 }
 ```
 
-(Already present - just verify the fields are being used)
+#### 3. Update `update_stats()` helper
 
-## File Changes
+Add WAX staked tracking:
+
+```cpp
+void cheeseburner::update_stats(
+    asset wax_claimed, 
+    asset wax_staked,      // NEW parameter
+    asset cheese_burned, 
+    asset cheese_reward
+) {
+    stats_table stats(get_self(), get_self().value);
+    
+    auto itr = stats.find(0);
+    if (itr == stats.end()) {
+        stats.emplace(get_self(), [&](auto& row) {
+            row.total_burns = 1;
+            row.total_wax_claimed = wax_claimed;
+            row.total_wax_staked = wax_staked;     // NEW
+            row.total_cheese_burned = cheese_burned;
+            row.total_cheese_rewards = cheese_reward;
+        });
+    } else {
+        stats.modify(itr, same_payer, [&](auto& row) {
+            row.total_burns += 1;
+            row.total_wax_claimed += wax_claimed;
+            row.total_wax_staked += wax_staked;    // NEW
+            row.total_cheese_burned += cheese_burned;
+            row.total_cheese_rewards += cheese_reward;
+        });
+    }
+}
+```
+
+## Summary of Changes
 
 | File | Changes |
 |------|---------|
-| `src/lib/waxApi.ts` | Update `calculateClaimableRewards()` to include time-elapsed accrual for both voter and global voteshare |
+| `contracts/cheeseburner.hpp` | Add `total_wax_staked` to stats table, update action docs |
+| `contracts/cheeseburner.cpp` | Add CPU staking logic in `burn()`, adjust CHEESE split math in `on_cheese_transfer()`, update `update_stats()` signature |
 
-## Expected Results
+## Effect on Vote Weight
 
-After implementation:
-- Claimable WAX should display approximately **9.54 WAX** (matching user's expected value)
-- CHEESE estimate will be calculated correctly based on the accurate WAX amount
-- Cooldown timer should accurately reflect time remaining until next claim
+When WAX is staked via `delegatebw`, it increases the account's staked balance, which in turn increases:
+1. CPU resources available to the contract
+2. Vote weight for voting rewards (more staked = higher rewards over time)
 
-## Technical Notes
-
-- Time elapsed is calculated in seconds to match the contract's division by 1E6 (microseconds to seconds)
-- The change rate values represent voteshare accumulation per second
-- BigInt math handles the 48+ digit voteshare values without precision loss
-- The ratio calculation maintains 18 decimal places of precision before converting back to float
+This creates a compounding effect where each burn slightly increases future voting rewards.
