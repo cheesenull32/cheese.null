@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, CheckCircle } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp } from 'lucide-react';
 import { useWaxData } from '@/hooks/useWaxData';
 import { formatWaxAmount, formatCheeseAmount, formatCountdown } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,7 +10,17 @@ interface BurnStatsProps {
 }
 
 export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
-  const { claimableWax, estimatedCheese, canClaim, timeUntilNextClaim, isLoading, isError, refetch } = useWaxData();
+  const { 
+    claimableWax, 
+    cheeseBurnAmount, 
+    cheeseRewardAmount, 
+    waxStakeAmount,
+    canClaim, 
+    timeUntilNextClaim, 
+    isLoading, 
+    isError, 
+    refetch 
+  } = useWaxData();
 
   // Notify parent of canClaim changes
   if (onCanClaimChange) {
@@ -39,19 +49,53 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
         {/* Divider */}
         <div className="border-t border-cheese/10" />
 
-        {/* Estimated CHEESE Section */}
-        <div className="text-center space-y-2">
-          <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
-            Estimated Cheese Burn
-          </h3>
-          {isLoading ? (
-            <Skeleton className="h-10 w-56 mx-auto bg-muted" />
-          ) : isError ? (
-            <p className="text-destructive text-sm">Error loading data</p>
-          ) : (
-            <p className="text-3xl font-bold text-cheese-gradient">
-              {formatCheeseAmount(estimatedCheese)} <span className="text-lg text-muted-foreground">CHEESE</span>
-            </p>
+        {/* Estimated CHEESE Burn Section */}
+        <div className="text-center space-y-4">
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+              Estimated Cheese Burn
+            </h3>
+            {isLoading ? (
+              <Skeleton className="h-10 w-56 mx-auto bg-muted" />
+            ) : isError ? (
+              <p className="text-destructive text-sm">Error loading data</p>
+            ) : (
+              <div>
+                <p className="text-3xl font-bold text-cheese-gradient">
+                  {formatCheeseAmount(cheeseBurnAmount)} <span className="text-lg text-muted-foreground">CHEESE</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">(85%)</p>
+              </div>
+            )}
+          </div>
+
+          {/* Distribution Breakdown */}
+          {!isLoading && !isError && (
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              {/* Your Reward */}
+              <div className="text-center space-y-1">
+                <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
+                  <Gift className="w-3 h-3" />
+                  <span className="text-xs font-medium">Your Reward</span>
+                </div>
+                <p className="text-sm font-semibold text-cheese">
+                  {formatCheeseAmount(cheeseRewardAmount)}
+                </p>
+                <p className="text-xs text-muted-foreground">CHEESE (5%)</p>
+              </div>
+
+              {/* Compound Stake */}
+              <div className="text-center space-y-1">
+                <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
+                  <TrendingUp className="w-3 h-3" />
+                  <span className="text-xs font-medium">Compound Stake</span>
+                </div>
+                <p className="text-sm font-semibold text-cheese">
+                  {formatWaxAmount(waxStakeAmount)}
+                </p>
+                <p className="text-xs text-muted-foreground">WAX (10%)</p>
+              </div>
+            </div>
           )}
         </div>
 

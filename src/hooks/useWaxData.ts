@@ -17,6 +17,9 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
+  cheeseBurnAmount: number;       // 85% of original value (~94.44% of CHEESE)
+  cheeseRewardAmount: number;     // 5% of original value (~5.56% of CHEESE)
+  waxStakeAmount: number;         // 10% of WAX staked to CPU
   cheesePerWax: number;
   canClaim: boolean;
   timeUntilNextClaim: number;
@@ -78,7 +81,21 @@ export function useWaxData(): WaxData {
   }, [voterQuery.data, globalQuery.data]);
 
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
-  const estimatedCheese = claimableWax * cheesePerWax;
+  
+  // Calculate distribution breakdown
+  // 10% of WAX goes to CPU stake
+  const waxStakeAmount = claimableWax * 0.10;
+  
+  // 90% of WAX is swapped for CHEESE
+  const waxToSwap = claimableWax * 0.90;
+  const estimatedCheese = waxToSwap * cheesePerWax;
+  
+  // Of the swapped CHEESE:
+  // - 85/90 (~94.44%) is burned
+  // - 5/90 (~5.56%) is reward
+  const cheeseBurnAmount = estimatedCheese * (85 / 90);
+  const cheeseRewardAmount = estimatedCheese * (5 / 90);
+  
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
   const refetch = () => {
@@ -90,6 +107,9 @@ export function useWaxData(): WaxData {
   return {
     claimableWax,
     estimatedCheese,
+    cheeseBurnAmount,
+    cheeseRewardAmount,
+    waxStakeAmount,
     cheesePerWax,
     canClaim,
     timeUntilNextClaim,
