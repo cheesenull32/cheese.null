@@ -18,7 +18,7 @@ const Index = () => {
         <WalletButton />
         
         <h1 className="text-2xl font-bold text-cheese-gradient tracking-wider">
-          CHEESE BURNER
+          CHEESE.Null
         </h1>
         
         <BurnStats onCanClaimChange={setCanClaim} />
