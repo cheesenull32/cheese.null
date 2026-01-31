@@ -17,10 +17,10 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
-  cheeseBurnAmount: number;       // 80% of original value (~88.89% of CHEESE)
-  cheeseRewardAmount: number;     // 5% of original value (~5.56% of CHEESE)
-  cheeseLiquidityAmount: number;  // 5% of original value (~5.56% of CHEESE)
-  waxStakeAmount: number;         // 10% of WAX staked to CPU
+  cheeseBurnAmount: number;       // 66% of original value (82.5% of CHEESE)
+  cheeseRewardAmount: number;     // 5% of original value (6.25% of CHEESE)
+  cheeseLiquidityAmount: number;  // 9% of original value (11.25% of CHEESE)
+  waxStakeAmount: number;         // 20% of WAX staked to CPU
   cheesePerWax: number;
   canClaim: boolean;
   timeUntilNextClaim: number;
@@ -84,20 +84,20 @@ export function useWaxData(): WaxData {
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   
   // Calculate distribution breakdown
-  // 10% of WAX goes to CPU stake
-  const waxStakeAmount = claimableWax * 0.10;
+  // 20% of WAX goes to CPU stake
+  const waxStakeAmount = claimableWax * 0.20;
   
-  // 90% of WAX is swapped for CHEESE
-  const waxToSwap = claimableWax * 0.90;
+  // 80% of WAX is swapped for CHEESE
+  const waxToSwap = claimableWax * 0.80;
   const estimatedCheese = waxToSwap * cheesePerWax;
   
   // Of the swapped CHEESE:
-  // - 80/90 (~88.89%) is burned
-  // - 5/90 (~5.56%) is reward
-  // - 5/90 (~5.56%) is liquidity (sent to xcheeseliqst)
-  const cheeseBurnAmount = estimatedCheese * (80 / 90);
-  const cheeseRewardAmount = estimatedCheese * (5 / 90);
-  const cheeseLiquidityAmount = estimatedCheese * (5 / 90);
+  // - 66/80 (82.5%) is nulled
+  // - 5/80 (6.25%) is reward
+  // - 9/80 (11.25%) is xCHEESE (sent to xcheeseliqst)
+  const cheeseBurnAmount = estimatedCheese * (66 / 80);
+  const cheeseRewardAmount = estimatedCheese * (5 / 80);
+  const cheeseLiquidityAmount = estimatedCheese * (9 / 80);
   
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
