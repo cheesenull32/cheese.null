@@ -51,9 +51,6 @@ ACTION cheeseburner::burn(name caller) {
         .timestamp = current_time_point()
     }, get_self());
 
-    // Get WAX balance before claiming
-    asset wax_before = get_wax_balance(get_self());
-
     // Step 1: Claim vote rewards from eosio
     action(
         permission_level{get_self(), "active"_n},
@@ -62,11 +59,7 @@ ACTION cheeseburner::burn(name caller) {
         make_tuple(get_self())
     ).send();
 
-    // Note: Due to EOSIO's deferred transaction model, the balance won't update
-    // until after this action completes. We use inline actions to handle the flow.
-    
-    // Get WAX balance after claiming (this gets the balance at tx start, not after claim)
-    // The claim happens inline, so we need to read the balance that will exist after claim
+    // Get WAX balance (will be updated after claim inline action)
     asset wax_balance = get_wax_balance(get_self());
     
     // Check minimum WAX requirement
@@ -75,9 +68,31 @@ ACTION cheeseburner::burn(name caller) {
         ", Need: " + config.min_wax_to_burn.to_string());
     check(wax_balance.amount > 0, "No WAX available to swap");
 
-    // Step 2: Swap all WAX for CHEESE via Alcor
+    // Step 2: Calculate 10% for CPU staking, 90% for swap
+    int64_t stake_amount = wax_balance.amount * 10 / 100;
+    int64_t swap_amount = wax_balance.amount - stake_amount;
+    
+    asset to_stake = asset(stake_amount, WAX_SYMBOL);
+    asset to_swap = asset(swap_amount, WAX_SYMBOL);
+
+    // Step 3: Stake 10% as CPU to self (increases vote weight)
+    if (to_stake.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            EOSIO_CONTRACT,
+            "delegatebw"_n,
+            make_tuple(
+                get_self(),                    // from
+                get_self(),                    // receiver (stake to self)
+                asset(0, WAX_SYMBOL),          // stake_net_quantity (0 NET)
+                to_stake,                      // stake_cpu_quantity (10% WAX)
+                false                          // transfer (keep ownership)
+            )
+        ).send();
+    }
+
+    // Step 4: Swap remaining 90% for CHEESE via Alcor
     // Memo format: "swap,<min_output>,<pool_id>"
-    // Using 0 for min_output (no slippage protection) - can be enhanced later
     string swap_memo = "swap,0," + to_string(config.alcor_pool_id);
 
     action(
@@ -87,13 +102,13 @@ ACTION cheeseburner::burn(name caller) {
         make_tuple(
             get_self(),             // from
             ALCOR_SWAP_CONTRACT,    // to
-            wax_balance,            // quantity (all available WAX)
+            to_swap,                // quantity (90% of WAX)
             swap_memo               // swap instruction
         )
     ).send();
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split 95% burn / 5% reward to caller
+    // which will then split ~94.4% burn / ~5.6% reward to caller
 }
 
 ACTION cheeseburner::logburn(
@@ -133,14 +148,17 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     check(pending.exists(), "No pending burn found");
     pending_burn_row burn_info = pending.get();
 
-    // Calculate split: 95% burn, 5% reward
-    int64_t reward_amount = quantity.amount * 5 / 100;  // 5%
-    int64_t burn_amount = quantity.amount - reward_amount;  // 95%
+    // Calculate split for CHEESE portion only
+    // Since we only swapped 90% of WAX, we need:
+    // - Burn: 85/90 ≈ 94.44% of CHEESE
+    // - Reward: 5/90 ≈ 5.56% of CHEESE
+    int64_t reward_amount = quantity.amount * 5 / 90;  // ~5.56%
+    int64_t burn_amount = quantity.amount - reward_amount;  // ~94.44%
     
     asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
 
-    // Send 5% reward to caller
+    // Send reward to caller
     if (reward.amount > 0) {
         action(
             permission_level{get_self(), "active"_n},
@@ -155,11 +173,11 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
         ).send();
     }
 
-    // Burn 95%
+    // Burn the rest
     burn_cheese(to_burn);
 
-    // Update statistics
-    update_stats(asset(0, WAX_SYMBOL), to_burn, reward);
+    // Update statistics (wax_staked is tracked in burn() action)
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward);
 
     // Clear pending burn
     pending.remove();
@@ -234,7 +252,7 @@ void cheeseburner::burn_cheese(asset quantity) {
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned, asset cheese_reward) {
+void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
@@ -242,6 +260,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned, asset ch
         stats.emplace(get_self(), [&](auto& row) {
             row.total_burns = 1;
             row.total_wax_claimed = wax_claimed;
+            row.total_wax_staked = wax_staked;
             row.total_cheese_burned = cheese_burned;
             row.total_cheese_rewards = cheese_reward;
         });
@@ -249,6 +268,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset cheese_burned, asset ch
         stats.modify(itr, same_payer, [&](auto& row) {
             row.total_burns += 1;
             row.total_wax_claimed += wax_claimed;
+            row.total_wax_staked += wax_staked;
             row.total_cheese_burned += cheese_burned;
             row.total_cheese_rewards += cheese_reward;
         });

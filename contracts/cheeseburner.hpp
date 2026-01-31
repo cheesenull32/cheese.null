@@ -55,6 +55,7 @@ public:
     TABLE stats_row {
         uint64_t total_burns;           // Total number of burn transactions
         asset total_wax_claimed;        // Total WAX claimed from voting rewards
+        asset total_wax_staked;         // Total WAX staked as CPU
         asset total_cheese_burned;      // Total CHEESE burned
         asset total_cheese_rewards;     // Total CHEESE paid as caller rewards
         
@@ -96,7 +97,8 @@ public:
     );
 
     // Main burn action - caller receives 5% reward
-    // Claims vote rewards, swaps WAX for CHEESE, burns 95% CHEESE, rewards 5% to caller
+    // Claims vote rewards, stakes 10% to CPU, swaps 90% for CHEESE,
+    // burns 94.4% CHEESE, rewards 5.6% to caller
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
@@ -128,7 +130,7 @@ private:
     void burn_cheese(asset quantity);
 
     // Update statistics
-    void update_stats(asset wax_claimed, asset cheese_burned, asset cheese_reward);
+    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward);
 
     // Get or create default config
     configrow get_config();
