@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp, Droplet } from 'lucide-react';
 import { useWaxData } from '@/hooks/useWaxData';
 import { formatWaxAmount, formatCheeseAmount, formatCountdown } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,9 +11,9 @@ interface BurnStatsProps {
 
 export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
   const { 
-    claimableWax, 
     cheeseBurnAmount, 
-    cheeseRewardAmount, 
+    cheeseRewardAmount,
+    cheeseLiquidityAmount,
     waxStakeAmount,
     canClaim, 
     timeUntilNextClaim, 
@@ -49,7 +49,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
 
           {/* Distribution Breakdown */}
           {!isLoading && !isError && (
-            <div className="grid grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-3 gap-3 pt-2">
               {/* Your Reward */}
               <div className="text-center space-y-1">
                 <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
@@ -62,11 +62,23 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
                 <p className="text-xs text-muted-foreground">CHEESE</p>
               </div>
 
+              {/* Liquidity */}
+              <div className="text-center space-y-1">
+                <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
+                  <Droplet className="w-3 h-3" />
+                  <span className="text-xs font-medium">Liquidity</span>
+                </div>
+                <p className="text-sm font-semibold text-cheese">
+                  {formatCheeseAmount(cheeseLiquidityAmount)}
+                </p>
+                <p className="text-xs text-muted-foreground">CHEESE</p>
+              </div>
+
               {/* Compound Stake */}
               <div className="text-center space-y-1">
                 <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
                   <TrendingUp className="w-3 h-3" />
-                  <span className="text-xs font-medium">Compound Stake</span>
+                  <span className="text-xs font-medium">Compound</span>
                 </div>
                 <p className="text-sm font-semibold text-cheese">
                   {formatWaxAmount(waxStakeAmount)}

@@ -17,8 +17,9 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
-  cheeseBurnAmount: number;       // 85% of original value (~94.44% of CHEESE)
+  cheeseBurnAmount: number;       // 80% of original value (~88.89% of CHEESE)
   cheeseRewardAmount: number;     // 5% of original value (~5.56% of CHEESE)
+  cheeseLiquidityAmount: number;  // 5% of original value (~5.56% of CHEESE)
   waxStakeAmount: number;         // 10% of WAX staked to CPU
   cheesePerWax: number;
   canClaim: boolean;
@@ -91,10 +92,12 @@ export function useWaxData(): WaxData {
   const estimatedCheese = waxToSwap * cheesePerWax;
   
   // Of the swapped CHEESE:
-  // - 85/90 (~94.44%) is burned
+  // - 80/90 (~88.89%) is burned
   // - 5/90 (~5.56%) is reward
-  const cheeseBurnAmount = estimatedCheese * (85 / 90);
+  // - 5/90 (~5.56%) is liquidity (sent to xcheeseliqst)
+  const cheeseBurnAmount = estimatedCheese * (80 / 90);
   const cheeseRewardAmount = estimatedCheese * (5 / 90);
+  const cheeseLiquidityAmount = estimatedCheese * (5 / 90);
   
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
@@ -109,6 +112,7 @@ export function useWaxData(): WaxData {
     estimatedCheese,
     cheeseBurnAmount,
     cheeseRewardAmount,
+    cheeseLiquidityAmount,
     waxStakeAmount,
     cheesePerWax,
     canClaim,

@@ -148,14 +148,17 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     check(pending.exists(), "No pending burn found");
     pending_burn_row burn_info = pending.get();
 
-    // Calculate split for CHEESE portion only
+    // Calculate split for CHEESE portion
     // Since we only swapped 90% of WAX, we need:
-    // - Burn: 85/90 ≈ 94.44% of CHEESE
-    // - Reward: 5/90 ≈ 5.56% of CHEESE
-    int64_t reward_amount = quantity.amount * 5 / 90;  // ~5.56%
-    int64_t burn_amount = quantity.amount - reward_amount;  // ~94.44%
+    // - Burn: 80/90 ≈ 88.89% of CHEESE (80% of original value)
+    // - Reward: 5/90 ≈ 5.56% of CHEESE (5% of original value)
+    // - Liquidity: 5/90 ≈ 5.56% of CHEESE (5% of original value)
+    int64_t reward_amount = quantity.amount * 5 / 90;     // ~5.56%
+    int64_t liquidity_amount = quantity.amount * 5 / 90;  // ~5.56%
+    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // ~88.89%
     
     asset reward = asset(reward_amount, CHEESE_SYMBOL);
+    asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);
     asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
 
     // Send reward to caller
@@ -173,11 +176,26 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
         ).send();
     }
 
+    // Send liquidity portion to xcheeseliqst
+    if (liquidity.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            CHEESE_CONTRACT,
+            "transfer"_n,
+            make_tuple(
+                get_self(),
+                CHEESE_LIQ_ACCOUNT,
+                liquidity,
+                string("CHEESE liquidity allocation")
+            )
+        ).send();
+    }
+
     // Burn the rest
     burn_cheese(to_burn);
 
     // Update statistics (wax_staked is tracked in burn() action)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward);
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity);
 
     // Clear pending burn
     pending.remove();
@@ -252,7 +270,7 @@ void cheeseburner::burn_cheese(asset quantity) {
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward) {
+void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
@@ -263,6 +281,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
             row.total_wax_staked = wax_staked;
             row.total_cheese_burned = cheese_burned;
             row.total_cheese_rewards = cheese_reward;
+            row.total_cheese_liquidity = cheese_liquidity;
         });
     } else {
         stats.modify(itr, same_payer, [&](auto& row) {
@@ -271,6 +290,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
             row.total_wax_staked += wax_staked;
             row.total_cheese_burned += cheese_burned;
             row.total_cheese_rewards += cheese_reward;
+            row.total_cheese_liquidity += cheese_liquidity;
         });
     }
 }
