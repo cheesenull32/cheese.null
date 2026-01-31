@@ -30,25 +30,6 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
   return (
     <Card className="w-full max-w-md bg-card/80 backdrop-blur border-cheese/20 cheese-glow">
       <CardContent className="p-6 space-y-6">
-        {/* Claimable WAX Section */}
-        <div className="text-center space-y-2">
-          <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
-            Claimable Vote Rewards
-          </h3>
-          {isLoading ? (
-            <Skeleton className="h-10 w-48 mx-auto bg-muted" />
-          ) : isError ? (
-            <p className="text-destructive text-sm">Error loading data</p>
-          ) : (
-            <p className="text-3xl font-bold text-cheese-gradient">
-              {formatWaxAmount(claimableWax)} <span className="text-lg text-muted-foreground">WAX</span>
-            </p>
-          )}
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-cheese/10" />
-
         {/* Estimated CHEESE Burn Section */}
         <div className="text-center space-y-4">
           <div className="space-y-2">
@@ -60,12 +41,9 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
             ) : isError ? (
               <p className="text-destructive text-sm">Error loading data</p>
             ) : (
-              <div>
-                <p className="text-3xl font-bold text-cheese-gradient">
-                  {formatCheeseAmount(cheeseBurnAmount)} <span className="text-lg text-muted-foreground">CHEESE</span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">(85%)</p>
-              </div>
+              <p className="text-3xl font-bold text-cheese-gradient">
+                {formatCheeseAmount(cheeseBurnAmount)} <span className="text-lg text-muted-foreground">CHEESE</span>
+              </p>
             )}
           </div>
 
@@ -81,7 +59,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
                 <p className="text-sm font-semibold text-cheese">
                   {formatCheeseAmount(cheeseRewardAmount)}
                 </p>
-                <p className="text-xs text-muted-foreground">CHEESE (5%)</p>
+                <p className="text-xs text-muted-foreground">CHEESE</p>
               </div>
 
               {/* Compound Stake */}
@@ -93,7 +71,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
                 <p className="text-sm font-semibold text-cheese">
                   {formatWaxAmount(waxStakeAmount)}
                 </p>
-                <p className="text-xs text-muted-foreground">WAX (10%)</p>
+                <p className="text-xs text-muted-foreground">WAX</p>
               </div>
             </div>
           )}
