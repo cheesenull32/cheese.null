@@ -99,7 +99,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
           ) : canClaim ? (
             <div className="flex items-center justify-center gap-2 text-green-500">
               <CheckCircle className="w-4 h-4" />
-              <span className="text-sm font-semibold">Ready to claim!</span>
+              <span className="text-sm font-semibold">Ready!</span>
             </div>
           ) : (
             <div className="flex items-center justify-center gap-2 text-muted-foreground">
