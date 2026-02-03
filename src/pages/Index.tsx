@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BurnButton } from "@/components/BurnButton";
 import { BurnStats } from "@/components/BurnStats";
+import { TotalStats } from "@/components/TotalStats";
 import { WalletButton } from "@/components/WalletButton";
 
 const Index = () => {
@@ -28,6 +29,8 @@ const Index = () => {
         <p className="text-muted-foreground text-sm">
           {canClaim ? "Click to claim & burn 🧀🔥" : "Waiting for cooldown ⏳"}
         </p>
+
+        <TotalStats />
       </div>
     </div>
   );

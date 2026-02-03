@@ -63,6 +63,55 @@ export interface AlcorPoolData {
   tvlUSD: number;
 }
 
+export interface ContractStats {
+  total_burns: number;
+  total_wax_claimed: string;
+  total_wax_staked: string;
+  total_cheese_burned: string;
+  total_cheese_rewards: string;
+  total_cheese_liquidity: string;
+}
+
+// Parse asset string like "123.45678900 WAX" to number
+export function parseAssetAmount(assetString: string): number {
+  if (!assetString) return 0;
+  const amount = assetString.split(' ')[0];
+  return parseFloat(amount) || 0;
+}
+
+export async function fetchContractStats(contractAccount: string): Promise<ContractStats | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code: contractAccount,
+        scope: contractAccount,
+        table: 'stats',
+        limit: 1,
+        json: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`WAX API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.rows && data.rows.length > 0) {
+      return data.rows[0] as ContractStats;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error fetching contract stats:', error);
+    return null;
+  }
+}
+
 export async function fetchWaxBalance(account: string): Promise<number> {
   try {
     const response = await fetch(WAX_API_ENDPOINT, {
