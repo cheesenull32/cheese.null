@@ -146,7 +146,7 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     // Get the caller who initiated this burn
     pending_burn_table pending(get_self(), get_self().value);
     check(pending.exists(), "No pending burn found");
-    pending_burn_row burn_info = pending.get();
+    pendingburnr burn_info = pending.get();
 
     // Calculate split for CHEESE portion
     // Since we only swapped 80% of WAX, we need:

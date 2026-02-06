@@ -46,13 +46,13 @@ public:
 
     // Statistics table
     // Pending burn caller - stores who initiated the current burn
-    TABLE pending_burn_row {
+    TABLE pendingburnr {
         name caller;               // Account that called burn()
         time_point_sec timestamp;  // When burn was initiated
         
         uint64_t primary_key() const { return 0; }
     };
-    typedef singleton<"pendingburn"_n, pending_burn_row> pending_burn_table;
+    typedef singleton<"pendingburn"_n, pendingburnr> pending_burn_table;
 
     // Statistics table
     TABLE stats_row {
