@@ -45,7 +45,7 @@ ACTION cheeseburner::burn(name caller) {
     check(config.enabled, "Burns are currently disabled");
 
     // Store caller for later use in on_cheese_transfer
-    pending_burn_table pending(get_self(), get_self().value);
+    pendingburn_t pending(get_self(), get_self().value);
     pending.set({
         .caller = caller,
         .timestamp = current_time_point()
@@ -144,9 +144,9 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     check(quantity.amount > 0, "Amount must be positive");
 
     // Get the caller who initiated this burn
-    pending_burn_table pending(get_self(), get_self().value);
+    pendingburn_t pending(get_self(), get_self().value);
     check(pending.exists(), "No pending burn found");
-    pending_burn_row burn_info = pending.get();
+    pendingburnr burn_info = pending.get();
 
     // Calculate split for CHEESE portion
     // Since we only swapped 80% of WAX, we need:
