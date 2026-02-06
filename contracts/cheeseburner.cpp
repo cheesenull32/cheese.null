@@ -108,7 +108,7 @@ ACTION cheeseburner::burn(name caller) {
     ).send();
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split 66% nulled, 5% reward, 9% xCHEESE
+    // which will then split 63% nulled, 10% reward, 7% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
@@ -150,12 +150,12 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
 
     // Calculate split for CHEESE portion
     // Since we only swapped 80% of WAX, we need:
-    // - Null: 66/80 = 82.5% of CHEESE (66% of original value)
-    // - Reward: 5/80 = 6.25% of CHEESE (5% of original value)
-    // - xCHEESE: 9/80 = 11.25% of CHEESE (9% of original value)
-    int64_t reward_amount = quantity.amount * 5 / 80;     // 6.25%
-    int64_t liquidity_amount = quantity.amount * 9 / 80;  // 11.25%
-    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 82.5%
+    // - Null: 63/80 = 78.75% of CHEESE (63% of original value)
+    // - Reward: 10/80 = 12.5% of CHEESE (10% of original value)
+    // - xCHEESE: 7/80 = 8.75% of CHEESE (7% of original value)
+    int64_t reward_amount = quantity.amount * 10 / 80;    // 12.5%
+    int64_t liquidity_amount = quantity.amount * 7 / 80;  // 8.75%
+    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 78.75%
     
     asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);

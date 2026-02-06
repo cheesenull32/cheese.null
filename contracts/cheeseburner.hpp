@@ -100,9 +100,9 @@ public:
         asset min_wax_to_burn
     );
 
-    // Main burn action - caller receives 5% reward
+    // Main burn action - caller receives 10% reward
     // Claims vote rewards, stakes 20% to CPU, swaps 80% for CHEESE,
-    // nulls 66% value, rewards 5% to caller, sends 9% to xcheeseliqst
+    // nulls 63% value, rewards 10% to caller, sends 7% to xcheeseliqst
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
