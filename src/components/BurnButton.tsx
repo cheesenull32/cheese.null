@@ -27,7 +27,7 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
         permission: 'active' 
       }],
       data: {
-        caller: callerName  // Pass caller to receive 5% reward
+        caller: callerName  // Pass caller to receive 10% reward
       },
     };
 
