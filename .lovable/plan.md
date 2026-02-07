@@ -1,58 +1,123 @@
 
 
-# Fix: Cheeseburner Contract Errors
+# Fix: Execution Order -- Claim Before Swap
 
-## Problem 1: Wrong Alcor Swap Memo Format (causes the name error)
+## Problem
 
-The contract builds the swap memo as `"swap,0,1252"` (line 96 of `cheeseburner.cpp`), but the Alcor AMM swap contract expects a completely different format:
+EOSIO inline actions all execute within the same transaction, but the balance is read at the moment `get_wax_balance()` is called -- before `claimgbmvote` has deposited its WAX. The contract swapped whatever WAX was already liquid in the account, then the vote claim arrived afterward, leaving the claimed WAX sitting unused.
+
+## Solution: Two-Action Architecture
+
+Split the `burn` action into two actions that the **frontend sends together in one transaction**:
+
+1. **`burn` action** -- Only claims vote rewards (calls `claimgbmvote`)
+2. **`swapnburn` action** -- Reads the (now-updated) balance, stakes 20%, swaps 80%, distributes CHEESE
+
+Since both actions are in the same transaction, the WAX from the claim is available by the time `swapnburn` runs.
+
+## Contract Changes (`contracts/cheeseburner.cpp` and `cheeseburner.hpp`)
+
+### New action in header (`cheeseburner.hpp`):
+- Add `ACTION swapnburn(name caller);` declaration
+
+### Refactored `burn` action:
+- Remove staking, swapping, and balance logic
+- Keep only: auth check, config check, store pending caller, call `claimgbmvote`
+
+### New `swapnburn` action:
+- Require contract self-auth (called inline from burn, or by frontend as second action)
+- Read WAX balance (now includes claimed rewards)
+- Stake 20% to CPU
+- Swap 80% via Alcor
+- Uses the same correct memo format already in place
+
+### Simplified approach (recommended):
+Rather than adding a new action, restructure so the **frontend sends two actions** in one transaction:
+
+1. Action 1: `eosio::claimgbmvote` (caller: `cheeseburner`)
+2. Action 2: `cheeseburner::burn` (which now only does the swap/distribute logic)
+
+This way the claim executes first, WAX balance is updated, then `burn` reads the correct balance.
+
+## Frontend Changes (`src/components/BurnButton.tsx`)
+
+Update `handleClick` to send **two actions** in a single transaction:
 
 ```
-swapexactin#<Pool ID>#<Recipient>#<Output Token>#<Deadline>
+Action 1: {
+  account: 'eosio',
+  name: 'claimgbmvote',
+  authorization: [{ actor: 'cheeseburner', permission: 'active' }],
+  data: { owner: 'cheeseburner' }
+}
+
+Action 2: {
+  account: 'cheeseburner',
+  name: 'burn',
+  authorization: [{ actor: callerName, permission: 'active' }],
+  data: { caller: callerName }
+}
 ```
 
-When Alcor receives the malformed memo, it tries to parse parts of it as EOSIO names and fails because characters like `0` are not valid in EOSIO names (only `a-z`, `1-5`, `.` are allowed).
+**Important**: Action 1 requires `cheeseburner@active` authorization. Since `fragglerockk` cannot sign for `cheeseburner`, the contract must still call `claimgbmvote` as an inline action.
 
-### Fix
+### Revised approach -- keep it all in the contract but use two contract actions:
 
-In `contracts/cheeseburner.cpp`, replace line 96:
+**Contract changes:**
 
-```cpp
-// OLD (wrong format):
-string swap_memo = "swap,0," + to_string(config.alcor_pool_id);
+1. Rename current `burn` to just do: auth, config check, store pending caller, call `claimgbmvote`, then call `swapnburn` as a **deferred inline action** -- but deferred actions are deprecated on WAX.
 
-// NEW (correct Alcor AMM format):
-string swap_memo = "swapexactin#" + to_string(config.alcor_pool_id)
-    + "#" + get_self().to_string()
-    + "#0.0000 CHEESE@cheeseburger"
-    + "#0";
-```
+### Final recommended approach -- reorder inline actions:
 
-Parameters explained:
-- `swapexactin` -- swap type (swap all input for maximum output)
-- Pool ID -- `1252`
-- Recipient -- `cheeseburner` (the contract itself, to receive CHEESE for distribution)
-- Output Token -- `0.0000 CHEESE@cheeseburger` (minimum output amount, 0 = no slippage protection)
-- Deadline -- `0` (no deadline)
+Actually, the simplest fix: EOSIO inline actions execute in the order they are dispatched. The issue is that `get_wax_balance()` runs in the *parent* action context before any inline actions execute.
 
-## Problem 2: Stale Balance Check (secondary bug)
+**The real fix**: Move the balance check, staking, and swap into the `claimgbmvote` notification handler or use a second action.
 
-On line 63, `get_wax_balance(get_self())` is called immediately after dispatching the `claimgbmvote` inline action. However, inline actions execute **after** the current action completes, so this reads the **pre-claim** balance.
+**Cleanest solution**: Split into two contract actions sent by the frontend in one transaction:
 
-### Fix
+1. `cheeseburner::claim` -- calls `claimgbmvote` (requires only contract auth, so it must be an inline)
+2. `cheeseburner::burn(caller)` -- reads balance, stakes, swaps
 
-This means the contract will only work if there is already enough WAX in the contract balance from a **previous** claim. For a first-time run or if the balance is below `min_wax_to_burn`, it will fail with "Insufficient WAX balance."
+But since `claim` needs `cheeseburner@active` and only the contract can authorize that...
 
-Two options to fix this:
-1. **Simple approach**: Split into two transactions -- one to claim rewards, another to swap. This is the most reliable.
-2. **Keep single transaction**: Remove the balance check and trust that the claim will provide enough WAX (risky if the claim amount is small).
+### Actual cleanest fix:
 
-Recommended: keep the current single-transaction flow but understand that the balance check uses the **existing** contract balance (not including the just-claimed rewards). The claimed WAX from `claimgbmvote` will still be available for the `transfer` inline action since they all execute in the same transaction. So the swap will work -- the balance **check** is just inaccurate. To fix this properly, move the `check` after the claim by restructuring to use a two-action flow, or simply lower `min_wax_to_burn` to `0.00000000 WAX` to avoid the check blocking the transaction.
+Remove `claimgbmvote` from the contract entirely. Have the contract's `burn` action only do the swap/distribute. The **frontend** handles claiming separately -- but the user (`fragglerockk`) cannot call `claimgbmvote` for `cheeseburner`.
 
-## Summary of Changes
+### Correct solution:
 
-Only `contracts/cheeseburner.cpp` needs updating:
-1. **Line 96**: Fix the Alcor swap memo format from comma-separated to the correct `#`-separated format with proper parameters
-2. **Optional**: Adjust or remove the `min_wax_to_burn` check, or set it to 0 via `setconfig`
+Keep `claimgbmvote` as inline in `burn`, but **move all balance-dependent logic into `on_notify` handlers**. The WAX from `claimgbmvote` arrives via an `eosio.token::transfer` notification. Add an `on_notify("eosio.token::transfer")` handler that triggers when WAX arrives at the contract.
 
-After updating the contract code, you will need to **recompile and redeploy** the contract to WAX.
+## Final Design
 
+### Contract changes:
+
+**1. Add WAX transfer notification handler** (`on_wax_transfer`):
+- Triggered when WAX arrives (from vote claim or any source)
+- Only processes transfers from `eosio.vpay` or `eosio.bpay` (vote reward sources)
+- Reads the full WAX balance (now accurate)
+- Stakes 20% to CPU
+- Swaps 80% via Alcor
+
+**2. Simplify `burn` action**:
+- Auth check, config check, store pending caller
+- Call `claimgbmvote` inline
+- That's it -- the WAX notification handler takes over from there
+
+**3. Header changes** (`cheeseburner.hpp`):
+- Add `[[eosio::on_notify("eosio.token::transfer")]] void on_wax_transfer(name from, name to, asset quantity, string memo);`
+
+This is the idiomatic EOSIO pattern: react to token transfers via notifications rather than reading balances inline.
+
+## Summary of File Changes
+
+| File | Change |
+|------|--------|
+| `contracts/cheeseburner.hpp` | Add `on_wax_transfer` notification handler declaration |
+| `contracts/cheeseburner.cpp` | Simplify `burn` to only claim; move staking/swap logic to `on_wax_transfer`; filter by sender (`eosio.vpay`) |
+
+No frontend changes needed -- the single `burn` action from the UI remains the same.
+
+## After updating
+
+Recompile and redeploy the contract to WAX. Also use `setconfig` to reclaim the stranded vote rewards by calling `burn` again (this time the claim will deposit WAX, triggering the new notification handler to swap it).
