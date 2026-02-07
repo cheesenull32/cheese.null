@@ -37,7 +37,7 @@ ACTION cheeseburner::setconfig(
 }
 
 ACTION cheeseburner::burn(name caller) {
-    // Caller must authorize - they will receive 5% reward
+    // Caller must authorize - they will receive 10% reward
     require_auth(caller);
     
     // Get and validate config
@@ -51,31 +51,49 @@ ACTION cheeseburner::burn(name caller) {
         .timestamp = current_time_point()
     }, get_self());
 
-    // Step 1: Claim vote rewards from eosio
+    // Claim vote rewards from eosio
+    // The claimed WAX will arrive via eosio.token::transfer notification,
+    // which triggers on_wax_transfer to handle staking and swapping
     action(
         permission_level{get_self(), "active"_n},
         EOSIO_CONTRACT,
         "claimgbmvote"_n,
         make_tuple(get_self())
     ).send();
+}
 
-    // Get WAX balance (will be updated after claim inline action)
-    asset wax_balance = get_wax_balance(get_self());
-    
-    // Check minimum WAX requirement
-    check(wax_balance >= config.min_wax_to_burn, 
-        "Insufficient WAX balance. Have: " + wax_balance.to_string() + 
-        ", Need: " + config.min_wax_to_burn.to_string());
-    check(wax_balance.amount > 0, "No WAX available to swap");
+// ==================== WAX TRANSFER HANDLER ====================
 
-    // Step 2: Calculate 20% for CPU staking, 80% for swap
-    int64_t stake_amount = wax_balance.amount * 20 / 100;
-    int64_t swap_amount = wax_balance.amount - stake_amount;
+void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string memo) {
+    // Ignore outgoing transfers and self-transfers
+    if (to != get_self() || from == get_self()) {
+        return;
+    }
+
+    // Only process WAX from vote reward sources
+    if (from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
+        return; // Silently ignore other WAX transfers (e.g., manual deposits)
+    }
+
+    check(quantity.symbol == WAX_SYMBOL, "Only WAX tokens expected");
+    check(quantity.amount > 0, "Amount must be positive");
+
+    // Verify there's a pending burn
+    pending_burn_table pending(get_self(), get_self().value);
+    check(pending.exists(), "No pending burn found - call burn() first");
+
+    // Get config for pool ID
+    configrow config = get_config();
+
+    // Use the incoming quantity (the claimed vote reward)
+    // Calculate 20% for CPU staking, 80% for swap
+    int64_t stake_amount = quantity.amount * 20 / 100;
+    int64_t swap_amount = quantity.amount - stake_amount;
     
     asset to_stake = asset(stake_amount, WAX_SYMBOL);
     asset to_swap = asset(swap_amount, WAX_SYMBOL);
 
-    // Step 3: Stake 20% as CPU to self (increases vote weight)
+    // Stake 20% as CPU to self (increases vote weight)
     if (to_stake.amount > 0) {
         action(
             permission_level{get_self(), "active"_n},
@@ -85,14 +103,13 @@ ACTION cheeseburner::burn(name caller) {
                 get_self(),                    // from
                 get_self(),                    // receiver (stake to self)
                 asset(0, WAX_SYMBOL),          // stake_net_quantity (0 NET)
-                to_stake,                      // stake_cpu_quantity (10% WAX)
+                to_stake,                      // stake_cpu_quantity
                 false                          // transfer (keep ownership)
             )
         ).send();
     }
 
-    // Step 4: Swap remaining 80% for CHEESE via Alcor
-    // Memo format: "swap,<min_output>,<pool_id>"
+    // Swap remaining 80% for CHEESE via Alcor
     string swap_memo = "swapexactin#" + to_string(config.alcor_pool_id)
         + "#" + get_self().to_string()
         + "#0.0000 CHEESE@cheeseburger"
@@ -110,8 +127,11 @@ ACTION cheeseburner::burn(name caller) {
         )
     ).send();
 
+    // Update stats with WAX claimed and staked
+    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL));
+
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split 63% nulled, 10% reward, 7% xCHEESE
+    // which will then split: 78.75% nulled, 12.5% reward, 8.75% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
