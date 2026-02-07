@@ -106,9 +106,14 @@ public:
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
-    // When CHEESE arrives from Alcor swap, burn it
+    // When CHEESE arrives from Alcor swap, distribute it
     [[eosio::on_notify("cheeseburger::transfer")]]
     void on_cheese_transfer(name from, name to, asset quantity, string memo);
+
+    // Transfer notification handler for WAX tokens
+    // When WAX arrives from vote rewards, stake 20% and swap 80% for CHEESE
+    [[eosio::on_notify("eosio.token::transfer")]]
+    void on_wax_transfer(name from, name to, asset quantity, string memo);
 
     // Notification action - logs burn details to transaction history
     ACTION logburn(
