@@ -93,7 +93,10 @@ ACTION cheeseburner::burn(name caller) {
 
     // Step 4: Swap remaining 80% for CHEESE via Alcor
     // Memo format: "swap,<min_output>,<pool_id>"
-    string swap_memo = "swap,0," + to_string(config.alcor_pool_id);
+    string swap_memo = "swapexactin#" + to_string(config.alcor_pool_id)
+        + "#" + get_self().to_string()
+        + "#0.0000 CHEESE@cheeseburger"
+        + "#0";
 
     action(
         permission_level{get_self(), "active"_n},
