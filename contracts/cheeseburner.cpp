@@ -71,7 +71,7 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     }
 
     // Only process WAX from vote reward sources
-    if (from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
+    if (from != "eosio.voters"_n && from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
         return; // Silently ignore other WAX transfers (e.g., manual deposits)
     }
 
