@@ -1,40 +1,45 @@
 
-## Auto-Deploy to GitHub Pages via GitHub Actions
 
-**Repository**: `cheese.null` on https://github.com/cheesenull32/cheese.null
+# Fix Double-Counting Stats and Wire Up logburn Action
 
-### Overview
-This setup will automatically build and deploy your frontend to GitHub Pages every time you push changes from Lovable. Your site will be available at `https://cheesenull32.github.io/cheese.null/`
+## Overview
+Two targeted fixes to the `cheeseburner` smart contract:
+1. **Fix double-counting stats** -- `total_burns` increments twice per burn cycle (once in each transfer handler)
+2. **Wire up the logburn action** -- it exists but is never called
 
-### Changes Required
+## Changes
 
-#### 1. Create GitHub Actions Workflow File
-**New file: `.github/workflows/deploy.yml`**
+### File: `contracts/cheeseburner.hpp`
 
-A GitHub Actions workflow that will:
-- Trigger automatically on every push to the `main` branch
-- Install dependencies with `npm ci`
-- Build the project with `npm run build`
-- Deploy the resulting `dist` folder to GitHub Pages
-- Copy `index.html` to `404.html` for proper SPA routing support
+**Update `pendingburnr` struct** to store WAX amounts for use by `logburn`:
+- Add `asset wax_claimed` -- total WAX received from vote rewards
+- Add `asset wax_swapped` -- the 80% portion sent to Alcor
 
-#### 2. Update Vite Configuration
-**Modify: `vite.config.ts`**
+**Update `update_stats` signature** to add a `bool count_burn` parameter so callers can control whether `total_burns` is incremented.
 
-Add `base: '/cheese.null/'` to the Vite config. This ensures all CSS, JavaScript, and image assets load from the correct path when served from GitHub Pages subdirectory.
+### File: `contracts/cheeseburner.cpp`
 
-Changes:
-- Add `base: '/cheese.null/',` as a property in the config object (after the `server` configuration)
-- This tells Vite to prepend `/cheese.null/` to all asset paths during the build
+**Fix 1 -- Stats double-counting:**
+- Change `on_wax_transfer` call to `update_stats(..., false)` -- do NOT increment `total_burns` here
+- Change `on_cheese_transfer` call to `update_stats(..., true)` -- only increment when the burn actually completes
+- Update `update_stats` definition to conditionally increment `total_burns` based on the new parameter
 
-### After Approval Steps
-1. I'll create the workflow file and update vite.config.ts
-2. Go to your GitHub repository Settings > Pages
-3. Set Source to "GitHub Actions"
-4. Done! Every Lovable change auto-deploys to GitHub Pages within 1-2 minutes
+**Fix 2 -- Wire up logburn:**
+- In `on_wax_transfer`: store `wax_claimed` (full quantity) and `wax_swapped` (the 80% portion) in the `pendingburnr` singleton
+- In `on_cheese_transfer`: before `pending.remove()`, fire an inline `logburn` action:
+```text
+action(
+    permission_level{get_self(), "active"_n},
+    get_self(),
+    "logburn"_n,
+    make_tuple(burn_info.caller, burn_info.wax_claimed, burn_info.wax_swapped, to_burn)
+).send();
+```
 
-### Technical Details
-- The workflow uses `actions/checkout@v4` and `actions/deploy-pages@v4` (GitHub's official actions for page deployment)
-- `npm ci` is used instead of `npm install` for cleaner, more reliable builds
-- The 404.html fallback handles client-side routing for your single-page app
-- No secrets or additional configuration needed—GitHub Actions handles everything automatically
+## Summary of Touched Code
+
+| File | What changes |
+|------|-------------|
+| `contracts/cheeseburner.hpp` | Add 2 fields to `pendingburnr`, update `update_stats` signature |
+| `contracts/cheeseburner.cpp` | Update `update_stats` definition, fix both call sites, store WAX in pending, add `logburn` inline action |
+
