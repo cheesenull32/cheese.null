@@ -1,35 +1,40 @@
 
+## Auto-Deploy to GitHub Pages via GitHub Actions
 
-# Fix: Update WAX Transfer Source Filter
+**Repository**: `cheese.null` on https://github.com/cheesenull32/cheese.null
 
-## Problem
+### Overview
+This setup will automatically build and deploy your frontend to GitHub Pages every time you push changes from Lovable. Your site will be available at `https://cheesenull32.github.io/cheese.null/`
 
-The `on_wax_transfer` handler in `contracts/cheeseburner.cpp` filters incoming WAX transfers by sender account. It currently checks for `eosio.vpay` and `eosio.bpay`, but `claimgbmvote` actually sends WAX from `eosio.voters`. The handler silently exits, leaving the claimed WAX sitting idle in the contract.
+### Changes Required
 
-## Change
+#### 1. Create GitHub Actions Workflow File
+**New file: `.github/workflows/deploy.yml`**
 
-**File: `contracts/cheeseburner.cpp`** -- Update the sender filter in `on_wax_transfer`:
+A GitHub Actions workflow that will:
+- Trigger automatically on every push to the `main` branch
+- Install dependencies with `npm ci`
+- Build the project with `npm run build`
+- Deploy the resulting `dist` folder to GitHub Pages
+- Copy `index.html` to `404.html` for proper SPA routing support
 
-Replace:
-```cpp
-if (from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
-    return;
-}
-```
+#### 2. Update Vite Configuration
+**Modify: `vite.config.ts`**
 
-With:
-```cpp
-if (from != "eosio.voters"_n && from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
-    return;
-}
-```
+Add `base: '/cheese.null/'` to the Vite config. This ensures all CSS, JavaScript, and image assets load from the correct path when served from GitHub Pages subdirectory.
 
-This adds `eosio.voters` as a recognized vote reward source, which is the account that actually dispatches WAX when `claimgbmvote` is called.
+Changes:
+- Add `base: '/cheese.null/',` as a property in the config object (after the `server` configuration)
+- This tells Vite to prepend `/cheese.null/` to all asset paths during the build
 
-## After Updating
+### After Approval Steps
+1. I'll create the workflow file and update vite.config.ts
+2. Go to your GitHub repository Settings > Pages
+3. Set Source to "GitHub Actions"
+4. Done! Every Lovable change auto-deploys to GitHub Pages within 1-2 minutes
 
-1. Copy the updated `.cpp` file to your friend
-2. Recompile with `eosio-cpp`
-3. Redeploy with `cleos set contract`
-4. The stranded WAX from the previous failed burn will need a new `burn` call to process (it won't be picked up automatically since the notification already passed)
-
+### Technical Details
+- The workflow uses `actions/checkout@v4` and `actions/deploy-pages@v4` (GitHub's official actions for page deployment)
+- `npm ci` is used instead of `npm install` for cleaner, more reliable builds
+- The 404.html fallback handles client-side routing for your single-page app
+- No secrets or additional configuration needed—GitHub Actions handles everything automatically
