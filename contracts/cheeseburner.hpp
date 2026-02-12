@@ -49,6 +49,8 @@ public:
     TABLE pendingburnr {
         name caller;               // Account that called burn()
         time_point_sec timestamp;  // When burn was initiated
+        asset wax_claimed;         // Total WAX received from vote rewards
+        asset wax_swapped;         // The 80% portion sent to Alcor
         
         uint64_t primary_key() const { return 0; }
     };
@@ -139,7 +141,7 @@ private:
     void burn_cheese(asset quantity);
 
     // Update statistics
-    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity);
+    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn);
 
     // Get or create default config
     configrow get_config();
