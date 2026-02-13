@@ -1,26 +1,27 @@
 
 
-# Fix Blank Preview -- Remove GitHub Pages Base Path Conflict
+# Fix GitHub Pages Build: Lock File Out of Sync
 
 ## Problem
-The Lovite config has `base: '/cheese.null/'` which is needed for GitHub Pages but breaks the Lovable preview. The preview server returns a 502 error because it can't find files at `/cheese.null/src/main.tsx`.
+The GitHub Actions deployment fails because `package-lock.json` is out of sync with `package.json`. Several testing-related packages are missing from the lock file.
 
 ## Solution
-Make the `base` path conditional so it only applies during production builds (for GitHub Pages) but not during development (for Lovable preview).
+Change `npm ci` to `npm install` in the GitHub Actions workflow. `npm ci` requires an exact lock file match, while `npm install` will resolve and install dependencies even if the lock file is slightly out of date (and will update it).
 
 ## Change
 
-### File: `vite.config.ts`
+### File: `.github/workflows/deploy.yml`
 
-Update the `base` property to only apply in production:
+Replace the install step:
+```yaml
+# Before
+- name: Install dependencies
+  run: npm ci
 
-```typescript
-base: mode === 'production' ? '/cheese.null/' : '/',
+# After
+- name: Install dependencies
+  run: npm install
 ```
 
-This way:
-- **Lovable preview** (development mode): serves from `/` -- works correctly
-- **GitHub Pages build** (production mode): serves from `/cheese.null/` -- works correctly
-
-No other files need to change.
+This is a single-line change that will unblock the deployment immediately.
 
