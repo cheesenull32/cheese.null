@@ -1,28 +1,27 @@
 
 
-# Fix React Router 404 on GitHub Pages
+# Fix Social Media Link Preview
 
 ## Problem
-The app deploys to `https://cheesenull32.github.io/cheese.null/`, so the browser URL path is `/cheese.null/`. But React Router's `BrowserRouter` expects routes relative to `/`, so it doesn't match `/cheese.null/` to the `"/"` route and shows the 404 page.
+When sharing `https://cheesenull32.github.io/cheese.null/`, the link preview shows Lovable branding because `index.html` still has Lovable's default Open Graph meta tags and title.
 
 ## Solution
-Set the `basename` prop on `BrowserRouter` to `/cheese.null` in production, so React Router correctly matches routes under that subpath.
+Update the meta tags in `index.html` to reflect the CheeseNull project instead of Lovable defaults.
 
 ## Change
 
-### File: `src/App.tsx`
+### File: `index.html`
 
-Update `BrowserRouter` to include a conditional `basename`:
+Update these meta tags:
 
-```text
-<BrowserRouter basename={import.meta.env.BASE_URL}>
-```
+- `<title>` -- change from "Lovable App" to "CheeseNull"
+- `<meta name="description">` -- update to describe CheeseNull
+- `<meta name="author">` -- change from "Lovable" to "CheeseNull"
+- `<meta property="og:title">` -- change to "CheeseNull"
+- `<meta property="og:description">` -- update description
+- `<meta property="og:image">` -- remove or replace the Lovable OpenGraph image URL
+- `<meta name="twitter:site">` -- remove the `@Lovable` reference
+- `<meta name="twitter:image">` -- remove or replace the Lovable image URL
 
-Vite automatically sets `import.meta.env.BASE_URL` to match the `base` value in `vite.config.ts`:
-- Development: `"/"`
-- Production: `"/cheese.null/"`
-
-This means no hardcoding is needed -- it stays in sync with the Vite config automatically.
-
-No other files need to change.
+This is a single-file change with no code logic involved -- just updating static HTML meta content.
 
