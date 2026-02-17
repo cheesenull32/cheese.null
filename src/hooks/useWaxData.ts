@@ -58,8 +58,8 @@ export function useWaxData(): WaxData {
     staleTime: 10000,
   });
 
-  // Use unpaid_voteshare_last_updated for cooldown (matches WAX block explorers)
-  const lastClaimTime = voterQuery.data?.unpaid_voteshare_last_updated ?? null;
+  // Use last_claim_time for cooldown (only updates on actual claimgbmvote, not on staking)
+  const lastClaimTime = voterQuery.data?.last_claim_time ?? null;
 
   // Update countdown timer every second
   useEffect(() => {
