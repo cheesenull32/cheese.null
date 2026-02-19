@@ -1,47 +1,44 @@
 
-# Replace README.md with a Clean Contract Overview
+# Add WAX Cloud Wallet Support
 
-## Problem
-The current `README.md` is entirely Lovable boilerplate -- project URLs, IDE instructions, deployment guides -- none of which is relevant to someone browsing the contract on GitHub. It needs to be replaced with a simple plain-English explanation of what the `cheeseburner` contract does.
+## Overview
+WAX Cloud Wallet (also known as MyCloudWallet) is the most popular wallet for WAX users. Adding it alongside Anchor gives users a choice at login. This is a one-package install and a two-line code change.
 
-## Solution
-Rewrite `README.md` from scratch with no Lovable references. Keep it brief and non-technical: what the contract is, what it does, and the basic flow.
+## What Changes
 
-## New README Content
+### 1. Install `@wharfkit/wallet-plugin-cloudwallet`
+The official WharfKit plugin for MyCloudWallet.com. It handles the OAuth-style popup login flow that WAX Cloud Wallet uses.
 
+### 2. Update `src/lib/wharfkit.ts`
+Add the new plugin to the `walletPlugins` array alongside the existing Anchor plugin:
+
+```ts
+import { WalletPluginCloudWallet } from '@wharfkit/wallet-plugin-cloudwallet';
+
+export const sessionKit = new SessionKit({
+  appName: 'CHEESE Burner',
+  chains: [WAX_CHAIN],
+  ui: new WebRenderer(),
+  walletPlugins: [
+    new WalletPluginAnchor(),
+    new WalletPluginCloudWallet(),
+  ],
+});
 ```
-# cheeseburner
 
-A WAX smart contract that claims voting rewards and uses them to burn CHEESE tokens.
+WharfKit's built-in `WebRenderer` UI automatically presents both options in a wallet selection modal when the user clicks "Connect Wallet" -- no changes needed to `WalletButton.tsx`, `WalletContext.tsx`, or any other file.
 
-## What it does
+## How It Works for Users
+- User clicks "Connect Wallet"
+- WharfKit shows a modal with two options: Anchor and WAX Cloud Wallet
+- User picks their preferred wallet
+- Login and transaction signing work identically for both -- the rest of the app is unaffected
 
-1. Anyone can call the `burn` action to trigger a burn cycle.
-2. The contract claims its accumulated WAX voting rewards from the WAX blockchain.
-3. 20% of the claimed WAX is staked back as CPU to maintain vote weight.
-4. The remaining 80% is swapped for CHEESE via the Alcor AMM (pool #1252).
-5. Of the CHEESE received:
-   - ~78.75% is sent to `eosio.null` (permanently burned)
-   - ~12.5% is sent to the caller as a reward for triggering the burn
-   - ~8.75% is sent to `xcheeseliqst` for liquidity
-6. A `logburn` action is recorded to the caller's transaction history for transparency.
+## Files Summary
 
-## Cooldown
-
-The WAX voting reward claim has a 24-hour cooldown enforced by the `eosio` system contract. The burn action will fail if called before the cooldown has elapsed.
-
-## Contract accounts
-
-| Account | Role |
+| File | Change |
 |---|---|
-| `cheeseburner` | This contract |
-| `cheeseburger` | CHEESE token contract |
-| `swap.alcor` | Alcor AMM swap contract |
-| `eosio.null` | Burn destination |
-| `xcheeseliqst` | Liquidity allocation account |
-```
+| `package.json` | Add `@wharfkit/wallet-plugin-cloudwallet` dependency |
+| `src/lib/wharfkit.ts` | Import and register `WalletPluginCloudWallet` |
 
-## File to Modify
-- **`README.md`**: Replace entire contents with the above.
-
-This is a single-file, content-only change with no code impact whatsoever.
+That's it -- no other files need to change.
