@@ -37,7 +37,7 @@ ACTION cheeseburner::setconfig(
 }
 
 ACTION cheeseburner::burn(name caller) {
-    // Caller must authorize - they will receive 10% reward
+    // Caller must authorize - logged for on-chain transparency
     require_auth(caller);
     
     // Get and validate config
@@ -139,7 +139,7 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), false);
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split: 78.75% nulled, 12.5% reward, 8.75% xCHEESE
+    // which will then split: 78.75% nulled, 21.25% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
@@ -182,30 +182,12 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     // Calculate split for CHEESE portion
     // Since we only swapped 80% of WAX, we need:
     // - Null: 63/80 = 78.75% of CHEESE (63% of original value)
-    // - Reward: 10/80 = 12.5% of CHEESE (10% of original value)
-    // - xCHEESE: 7/80 = 8.75% of CHEESE (7% of original value)
-    int64_t reward_amount = quantity.amount * 10 / 80;    // 12.5%
-    int64_t liquidity_amount = quantity.amount * 7 / 80;  // 8.75%
-    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 78.75%
+    // - xCHEESE: 17/80 = 21.25% of CHEESE (17% of original value)
+    int64_t liquidity_amount = quantity.amount * 17 / 80; // 21.25%
+    int64_t burn_amount = quantity.amount - liquidity_amount;  // 78.75%
     
-    asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);
     asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
-
-    // Send reward to caller
-    if (reward.amount > 0) {
-        action(
-            permission_level{get_self(), "active"_n},
-            CHEESE_CONTRACT,
-            "transfer"_n,
-            make_tuple(
-                get_self(),
-                burn_info.caller,
-                reward,
-                string("Burn reward - thank you for burning CHEESE!")
-            )
-        ).send();
-    }
 
     // Send liquidity portion to xcheeseliqst
     if (liquidity.amount > 0) {
@@ -226,7 +208,7 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     burn_cheese(to_burn);
 
     // Update statistics (count this as a completed burn)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, true);
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, asset(0, CHEESE_SYMBOL), liquidity, true);
 
     // Log burn details to transaction history
     action(
