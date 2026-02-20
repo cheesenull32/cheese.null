@@ -102,9 +102,9 @@ public:
         asset min_wax_to_burn
     );
 
-    // Main burn action - caller receives 10% reward
+    // Main burn action - caller logged for on-chain transparency (no reward)
     // Claims vote rewards, stakes 20% to CPU, swaps 80% for CHEESE,
-    // nulls 63% value, rewards 10% to caller, sends 7% to xcheeseliqst
+    // nulls 78.75% to eosio.null, sends 21.25% to xcheeseliqst
     ACTION burn(name caller);
 
     // Transfer notification handler for CHEESE tokens
