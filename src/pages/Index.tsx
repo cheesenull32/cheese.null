@@ -27,7 +27,7 @@ const Index = () => {
         <BurnButton disabled={!canClaim} onBurnSuccess={handleBurnSuccess} />
         
         <p className="text-muted-foreground text-sm">
-          {canClaim ? "Click to claim & burn 🧀🔥" : "Waiting for cooldown ⏳"}
+          {canClaim ? "Click to claim & earn 🧀🔥" : "Waiting for cooldown ⏳"}
         </p>
 
         <TotalStats />
