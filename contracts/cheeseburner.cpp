@@ -14,8 +14,14 @@ ACTION cheeseburner::setconfig(
     config_table config_singleton(get_self(), get_self().value);
     
     if (config_singleton.exists()) {
-        configrow current = config_singleton.get();
-        require_auth(current.admin);
+        // During migration from old struct, get() may fail.
+        // Allow contract owner to bypass admin check.
+        if (has_auth(get_self())) {
+            // Contract owner can always update config
+        } else {
+            configrow current = config_singleton.get();
+            require_auth(current.admin);
+        }
     } else {
         require_auth(get_self());
     }
