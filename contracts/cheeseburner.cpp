@@ -195,6 +195,29 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), to_powerz, false);
 }
 
+ACTION cheeseburner::migrate(name caller) {
+    require_auth(get_self());
+
+    stats_table stats_tbl(get_self(), get_self().value);
+    auto itr = stats_tbl.find(0);
+
+    // Erase old row without deserializing (works even with ABI mismatch)
+    if (itr != stats_tbl.end()) {
+        stats_tbl.erase(itr);
+    }
+
+    // Write fresh row with all fields present
+    stats_tbl.emplace(get_self(), [&](auto& row) {
+        row.total_burns            = 0;
+        row.total_wax_claimed      = asset(0, WAX_SYMBOL);
+        row.total_wax_staked       = asset(0, WAX_SYMBOL);
+        row.total_cheese_burned    = asset(0, CHEESE_SYMBOL);
+        row.total_cheese_rewards   = asset(0, CHEESE_SYMBOL);
+        row.total_cheese_liquidity = asset(0, CHEESE_SYMBOL);
+        row.total_wax_cheesepowerz = asset(0, WAX_SYMBOL);
+    });
+}
+
 ACTION cheeseburner::logburn(
     name caller,
     asset wax_claimed,
