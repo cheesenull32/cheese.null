@@ -179,9 +179,9 @@ export function calculateCheesePerWax(poolData: AlcorPoolData): number {
   return cheeseReserve / waxReserve;
 }
 
-// Format WAX amount with proper precision
+// Format WAX amount with 4 decimal precision
 export function formatWaxAmount(amount: number): string {
-  return amount.toFixed(8);
+  return amount.toFixed(4);
 }
 
 // Format CHEESE amount with proper precision
