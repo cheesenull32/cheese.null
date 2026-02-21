@@ -70,18 +70,6 @@ export const TotalStats = () => {
               <p className="text-[10px] text-muted-foreground">CHEESE</p>
             </div>
 
-            {/* Compound */}
-            <div className="text-center space-y-0.5">
-              <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                <TrendingUp className="w-3 h-3" />
-                <span className="text-[10px] font-medium">Compound</span>
-              </div>
-              <p className="text-xs font-semibold text-cheese">
-                {formatWaxAmount(totalWaxCompounded)}
-              </p>
-              <p className="text-[10px] text-muted-foreground">WAX</p>
-            </div>
-
             {/* CheesePowerz */}
             <div className="text-center space-y-0.5">
               <div className="flex items-center justify-center gap-1 text-muted-foreground">
@@ -90,6 +78,18 @@ export const TotalStats = () => {
               </div>
               <p className="text-xs font-semibold text-cheese">
                 {formatWaxAmount(totalWaxCheesepowerz)}
+              </p>
+              <p className="text-[10px] text-muted-foreground">WAX</p>
+            </div>
+
+            {/* Compound */}
+            <div className="text-center space-y-0.5">
+              <div className="flex items-center justify-center gap-1 text-muted-foreground">
+                <TrendingUp className="w-3 h-3" />
+                <span className="text-[10px] font-medium">Compound</span>
+              </div>
+              <p className="text-xs font-semibold text-cheese">
+                {formatWaxAmount(totalWaxCompounded)}
               </p>
               <p className="text-[10px] text-muted-foreground">WAX</p>
             </div>
