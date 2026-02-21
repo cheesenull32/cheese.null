@@ -1,133 +1,75 @@
 
 
-# Combined Plan: New Distribution + Whitelist Priority Window
+# Fix: Config Singleton Migration in setconfig
 
-## Summary
+## Problem
 
-Three changes in one update:
+The `setconfig` action reads the existing config to verify the admin. But the on-chain config was written with the old struct (no `priority_window` field), so deserialization fails before the new config can be saved. This creates a deadlock -- you can't update config because reading the old config crashes.
 
-1. **New WAX/CHEESE distribution** (15% CPU, 5% cheesepowerz, 80% swap -> 75% burn, 12.5% xCHEESE, 12.5% caller reward)
-2. **Whitelist priority window** (48h exclusive window for whitelisted accounts after cooldown)
-3. **Whitelist managed via block explorer** using `addwhitelist` and `rmwhitelist` public actions
+## Solution
 
-## New Distribution Model
-
-| Destination | Current | New |
-|---|---|---|
-| WAX staked to CPU | 20% | **15%** |
-| WAX to cheesepowerz | -- | **5%** |
-| WAX swapped for CHEESE | 80% | 80% |
-| CHEESE burned (eosio.null) | 78.75% of CHEESE | **75% of CHEESE** |
-| xCHEESE liquidity | 21.25% of CHEESE | **12.5% of CHEESE** |
-| Caller reward | none | **12.5% of CHEESE** |
-
-## Priority Window
-
-```text
-Last burn happens
-       |
-  [0-24h]   --> Cooldown (nobody can burn)
-       |
-  [24-72h]  --> Whitelist-only window
-       |
-  [72h+]    --> Open to anyone
-```
-
-## Whitelist Management via Block Explorer
-
-The admin can add/remove accounts directly from any WAX block explorer (e.g., waxblock.io) by calling these actions on the `cheeseburner` contract:
-
-- **addwhitelist**: Takes a single `name account` parameter. Requires admin auth. Adds the account to the whitelist table.
-- **rmwhitelist**: Takes a single `name account` parameter. Requires admin auth. Removes the account from the whitelist table.
-
-The `whitelist` table is also readable on block explorers so the admin can verify who is currently whitelisted.
-
----
+Modify `setconfig` to catch the migration case: instead of calling `config_singleton.get()` directly, read the raw data size. If it doesn't match the expected new struct size, fall back to `require_auth(get_self())` (contract owner auth) to allow rewriting the singleton.
 
 ## Technical Details
 
-### `contracts/cheeseburner.hpp`
+### `contracts/cheeseburner.cpp` -- `setconfig` action
 
-- Add constant: `static constexpr name CHEESE_POWER_ACCOUNT = "cheesepowerz"_n;`
-- Add whitelist table:
-```text
-TABLE whitelist_row {
-    name account;
-    uint64_t primary_key() const { return account.value; }
-};
-typedef multi_index<"whitelist"_n, whitelist_row> whitelist_table;
+Replace the config-reading block with a safe migration approach:
+
+```cpp
+config_table config_singleton(get_self(), get_self().value);
+
+if (config_singleton.exists()) {
+    // Try to read raw data to check if it's the old format
+    auto raw = config_singleton.get_or_default(configrow{
+        .admin = get_self(),
+        .alcor_pool_id = DEFAULT_POOL_ID,
+        .enabled = false,
+        .min_wax_to_burn = asset(0, WAX_SYMBOL),
+        .priority_window = 172800
+    });
+    // If deserialization fails with get(), fall back to contract owner auth
+    // We use get_self() auth as a safe fallback for migration
+    if (!has_auth(raw.admin)) {
+        require_auth(get_self());
+    }
+} else {
+    require_auth(get_self());
+}
 ```
-- Add `priority_window` (uint32_t, default 172800 = 48 hours) to config singleton
-- Add `total_wax_cheesepowerz` to `stats_row`
-- Declare public actions: `addwhitelist(name account)` and `rmwhitelist(name account)`
-- Add private helper: `bool is_whitelisted(name account)`
-- Update `update_stats` signature to include cheesepowerz amount
-- Update `burn()` comment to reflect new distribution
 
-### `contracts/cheeseburner.cpp`
+However, `get_or_default` will still fail on partial reads. The cleanest approach is to simply check both auths:
 
-**`setconfig`** -- Add `priority_window` parameter
+```cpp
+if (config_singleton.exists()) {
+    // During migration from old struct, get() may fail.
+    // Allow contract owner to bypass admin check.
+    if (has_auth(get_self())) {
+        // Contract owner can always update config
+    } else {
+        configrow current = config_singleton.get();
+        require_auth(current.admin);
+    }
+} else {
+    require_auth(get_self());
+}
+```
 
-**`burn()`** -- Add whitelist priority window check:
-- Read last burn timestamp from `burners` table
-- If within `cooldown + priority_window`, require caller is whitelisted
-- Otherwise allow any caller
+This way:
+- If called with `get_self()` (contract owner) auth, it skips reading the old config entirely
+- If called with admin auth, it reads config normally (works after migration)
+- The user calls `setconfig` once using the **contract owner account** to migrate, then admin works going forward
 
-**`on_wax_transfer`** -- New WAX split:
-- `stake_amount = quantity.amount * 15 / 100` (15% CPU)
-- `powerz_amount = quantity.amount * 5 / 100` (5% cheesepowerz)
-- `swap_amount = quantity.amount - stake_amount - powerz_amount` (80% swap)
-- Add WAX transfer action to `cheesepowerz`
+## Steps for the User
 
-**`on_cheese_transfer`** -- New CHEESE split:
-- `reward_amount = quantity.amount * 10 / 80` (12.5% caller reward)
-- `liquidity_amount = quantity.amount * 10 / 80` (12.5% xCHEESE)
-- `burn_amount = quantity.amount - liquidity_amount - reward_amount` (75%)
-- Restore CHEESE transfer to `burn_info.caller`
-
-**New actions (callable from block explorer)**:
-- `addwhitelist(name account)` -- requires admin auth, validates account exists, emplaces into whitelist table
-- `rmwhitelist(name account)` -- requires admin auth, erases from whitelist table
-
-**`update_stats`** -- Add `wax_cheesepowerz` parameter
-
-### `src/hooks/useWaxData.ts`
-
-- WAX stake: 15% (was 20%)
-- Add `waxCheesepowerzAmount = claimableWax * 0.05`
-- Add `cheeseRewardAmount = estimatedCheese * (10 / 80)` (12.5%)
-- Change `cheeseLiquidityAmount = estimatedCheese * (10 / 80)` (12.5%)
-- Change `cheeseBurnAmount = estimatedCheese * (60 / 80)` (75%)
-
-### `src/hooks/useContractStats.ts`
-
-- Add `totalWaxCheesepowerz` field parsing `total_wax_cheesepowerz` from contract
-
-### `src/components/BurnStats.tsx`
-
-- Add "Your Reward" card and "CheesePowerz" card
-- Change grid to `grid-cols-2 sm:grid-cols-4`
-
-### `src/components/TotalStats.tsx`
-
-- Add CheesePowerz lifetime stat
-- Update grid to `grid-cols-2 sm:grid-cols-4`
-
-### `src/pages/Index.tsx`
-
-- Update hint text to mention reward
-
----
+1. We update the contract code
+2. You recompile and redeploy the contract
+3. Call `setconfig` using the **contract owner account** (not the admin account) -- this bypasses the broken config read
+4. After that, the admin account works normally for future `setconfig` calls
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `contracts/cheeseburner.hpp` | Add cheesepowerz constant, whitelist table, priority_window, cheesepowerz stats, addwhitelist/rmwhitelist declarations |
-| `contracts/cheeseburner.cpp` | New WAX 15/5/80 split, restore reward, whitelist check in burn(), addwhitelist/rmwhitelist actions, update setconfig |
-| `src/hooks/useWaxData.ts` | Update all ratios, add cheeseRewardAmount and waxCheesepowerzAmount |
-| `src/hooks/useContractStats.ts` | Add totalWaxCheesepowerz |
-| `src/components/BurnStats.tsx` | Add Reward and CheesePowerz cards, 4-column grid |
-| `src/components/TotalStats.tsx` | Add CheesePowerz lifetime stat |
-| `src/pages/Index.tsx` | Update hint text |
+| `contracts/cheeseburner.cpp` | Update `setconfig` to allow contract owner auth to bypass config read during migration |
 
