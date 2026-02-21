@@ -17,9 +17,11 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
-  cheeseBurnAmount: number;       // 63% of original value (78.75% of CHEESE)
-  cheeseLiquidityAmount: number;  // 17% of original value (21.25% of CHEESE)
-  waxStakeAmount: number;         // 20% of WAX staked to CPU
+  cheeseBurnAmount: number;       // 75% of CHEESE (60% of original WAX value)
+  cheeseLiquidityAmount: number;  // 12.5% of CHEESE (10% of original WAX value)
+  cheeseRewardAmount: number;     // 12.5% of CHEESE (10% of original WAX value)
+  waxStakeAmount: number;         // 15% of WAX staked to CPU
+  waxCheesepowerzAmount: number;  // 5% of WAX sent to cheesepowerz
   cheesePerWax: number;
   canClaim: boolean;
   timeUntilNextClaim: number;
@@ -83,18 +85,22 @@ export function useWaxData(): WaxData {
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   
   // Calculate distribution breakdown
-  // 20% of WAX goes to CPU stake
-  const waxStakeAmount = claimableWax * 0.20;
+  // 15% of WAX goes to CPU stake
+  const waxStakeAmount = claimableWax * 0.15;
+  // 5% of WAX goes to cheesepowerz
+  const waxCheesepowerzAmount = claimableWax * 0.05;
   
   // 80% of WAX is swapped for CHEESE
   const waxToSwap = claimableWax * 0.80;
   const estimatedCheese = waxToSwap * cheesePerWax;
   
   // Of the swapped CHEESE:
-  // - 63/80 (78.75%) is nulled
-  // - 17/80 (21.25%) is xCHEESE (sent to xcheeseliqst)
-  const cheeseBurnAmount = estimatedCheese * (63 / 80);
-  const cheeseLiquidityAmount = estimatedCheese * (17 / 80);
+  // - 60/80 (75%) is nulled
+  // - 10/80 (12.5%) is xCHEESE (sent to xcheeseliqst)
+  // - 10/80 (12.5%) is caller reward
+  const cheeseRewardAmount = estimatedCheese * (10 / 80);
+  const cheeseLiquidityAmount = estimatedCheese * (10 / 80);
+  const cheeseBurnAmount = estimatedCheese * (60 / 80);
   
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
@@ -109,7 +115,9 @@ export function useWaxData(): WaxData {
     estimatedCheese,
     cheeseBurnAmount,
     cheeseLiquidityAmount,
+    cheeseRewardAmount,
     waxStakeAmount,
+    waxCheesepowerzAmount,
     cheesePerWax,
     canClaim,
     timeUntilNextClaim,
