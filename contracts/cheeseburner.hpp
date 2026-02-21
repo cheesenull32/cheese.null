@@ -140,6 +140,9 @@ public:
         asset cheese_burned
     );
 
+    // One-time migration action to fix stats row with missing fields
+    ACTION migrate(name caller);
+
 private:
     // ==================== HELPERS ====================
 
