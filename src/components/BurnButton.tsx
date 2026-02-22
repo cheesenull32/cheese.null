@@ -12,7 +12,8 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
   const [isPressed, setIsPressed] = useState(false);
   const { isConnected, isTransacting, transact, session } = useWallet();
 
-  const isDisabled = disabled || !isConnected || isTransacting;
+  const isContractUpdating = true; // Temporary flag — remove when contract is redeployed
+  const isDisabled = disabled || !isConnected || isTransacting || isContractUpdating;
 
   const handleClick = async () => {
     if (isDisabled || !session) return;
@@ -50,6 +51,7 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
   };
 
   const getHintText = () => {
+    if (isContractUpdating) return "⚙️ Contract being updated — please wait";
     if (!isConnected) return "Connect wallet first";
     if (disabled) return "Waiting for cooldown";
     return null;
