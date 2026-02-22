@@ -10,21 +10,15 @@ ACTION cheeseburner::setconfig(
     asset min_wax_to_burn,
     uint32_t priority_window
 ) {
-    // Get current config to check admin
     config_table config_singleton(get_self(), get_self().value);
-    
-    if (config_singleton.exists()) {
-        // During migration from old struct, get() may fail.
-        // Allow contract owner to bypass admin check.
-        if (has_auth(get_self())) {
-            // Contract owner can always update config
-        } else {
-            configrow current = config_singleton.get();
-            require_auth(current.admin);
-        }
-    } else {
-        require_auth(get_self());
+
+    if (!has_auth(get_self())) {
+        // Non-owner caller: must read config to verify admin
+        check(config_singleton.exists(), "Contract not configured. Run setconfig first.");
+        configrow current = config_singleton.get();
+        require_auth(current.admin);
     }
+    // If has_auth(get_self()), skip all reads -- contract owner can always update
 
     // Validate inputs
     check(is_account(admin), "Admin account does not exist");
