@@ -198,15 +198,20 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
 ACTION cheeseburner::migrate(name caller) {
     require_auth(get_self());
 
-    stats_table stats_tbl(get_self(), get_self().value);
-    auto itr = stats_tbl.find(0);
-
-    // Erase old row without deserializing (works even with ABI mismatch)
-    if (itr != stats_tbl.end()) {
-        stats_tbl.erase(itr);
+    // Use raw DB intrinsics to delete without deserializing
+    // multi_index::find/erase would crash on schema-mismatched rows
+    auto raw_itr = db_find_i64(
+        get_self().value,   // code
+        get_self().value,   // scope
+        "stats"_n.value,    // table
+        0                   // primary key
+    );
+    if (raw_itr >= 0) {
+        db_remove_i64(raw_itr);
     }
 
-    // Write fresh row with all fields present
+    // Now emplace a fresh row with the correct schema
+    stats_table stats_tbl(get_self(), get_self().value);
     stats_tbl.emplace(get_self(), [&](auto& row) {
         row.total_burns            = 0;
         row.total_wax_claimed      = asset(0, WAX_SYMBOL);
