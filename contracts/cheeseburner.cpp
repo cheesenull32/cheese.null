@@ -48,7 +48,9 @@ ACTION cheeseburner::burn(name caller) {
     pending_burn_table pending(get_self(), get_self().value);
     pending.set({
         .caller = caller,
-        .timestamp = current_time_point()
+        .timestamp = current_time_point(),
+        .wax_claimed = asset(0, WAX_SYMBOL),
+        .wax_swapped = asset(0, WAX_SYMBOL)
     }, get_self());
 
     // Claim vote rewards from eosio
@@ -127,8 +129,14 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
         )
     ).send();
 
-    // Update stats with WAX claimed and staked
-    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL));
+    // Store WAX amounts in pending burn for logburn
+    pendingburnr updated_pending = pending.get();
+    updated_pending.wax_claimed = quantity;
+    updated_pending.wax_swapped = to_swap;
+    pending.set(updated_pending, get_self());
+
+    // Update stats with WAX claimed and staked (don't count burn yet)
+    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), false);
 
     // The CHEESE will arrive via on_cheese_transfer notification
     // which will then split: 78.75% nulled, 12.5% reward, 8.75% xCHEESE
@@ -217,8 +225,16 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     // Burn the rest
     burn_cheese(to_burn);
 
-    // Update statistics (wax_staked is tracked in burn() action)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity);
+    // Update statistics (count this as a completed burn)
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, true);
+
+    // Log burn details to transaction history
+    action(
+        permission_level{get_self(), "active"_n},
+        get_self(),
+        "logburn"_n,
+        make_tuple(burn_info.caller, burn_info.wax_claimed, burn_info.wax_swapped, to_burn)
+    ).send();
 
     // Clear pending burn
     pending.remove();
@@ -293,13 +309,13 @@ void cheeseburner::burn_cheese(asset quantity) {
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity) {
+void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
     if (itr == stats.end()) {
         stats.emplace(get_self(), [&](auto& row) {
-            row.total_burns = 1;
+            row.total_burns = count_burn ? 1 : 0;
             row.total_wax_claimed = wax_claimed;
             row.total_wax_staked = wax_staked;
             row.total_cheese_burned = cheese_burned;
@@ -308,7 +324,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
         });
     } else {
         stats.modify(itr, same_payer, [&](auto& row) {
-            row.total_burns += 1;
+            if (count_burn) row.total_burns += 1;
             row.total_wax_claimed += wax_claimed;
             row.total_wax_staked += wax_staked;
             row.total_cheese_burned += cheese_burned;
