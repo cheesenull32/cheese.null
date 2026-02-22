@@ -1,75 +1,73 @@
 
 
-# Fix: Config Singleton Migration in setconfig
+# Keep CheesePowerz in Frontend via On-Chain Transfer History
 
-## Problem
+## Overview
 
-The `setconfig` action reads the existing config to verify the admin. But the on-chain config was written with the old struct (no `priority_window` field), so deserialization fails before the new config can be saved. This creates a deadlock -- you can't update config because reading the old config crashes.
+Remove `total_wax_cheesepowerz` from the contract's stats table (fixing the ABI mismatch crash), but keep the CheesePowerz stat card in the frontend by querying on-chain transfer history using the WAX Hyperion API.
 
-## Solution
+The Hyperion API indexes all actions on WAX and lets you query transfer history with filters -- so we can sum all WAX transfers from `cheeseburner` to `cheesepowerz` to get the lifetime total.
 
-Modify `setconfig` to catch the migration case: instead of calling `config_singleton.get()` directly, read the raw data size. If it doesn't match the expected new struct size, fall back to `require_auth(get_self())` (contract owner auth) to allow rewriting the singleton.
+## Changes
 
-## Technical Details
+### 1. Contract: Remove `total_wax_cheesepowerz` from stats
 
-### `contracts/cheeseburner.cpp` -- `setconfig` action
+**`contracts/cheeseburner.hpp`**
+- Remove `total_wax_cheesepowerz` field from `stats_row` struct
+- Remove `wax_cheesepowerz` parameter from `update_stats` helper signature
 
-Replace the config-reading block with a safe migration approach:
+**`contracts/cheeseburner.cpp`**
+- Remove `wax_cheesepowerz` from `update_stats` function body and all call sites
+- Remove `total_wax_cheesepowerz` from the `migrate` action's emplace block
+- The 5% transfer to cheesepowerz stays untouched
 
-```cpp
-config_table config_singleton(get_self(), get_self().value);
+### 2. Frontend: Add Hyperion API query
 
-if (config_singleton.exists()) {
-    // Try to read raw data to check if it's the old format
-    auto raw = config_singleton.get_or_default(configrow{
-        .admin = get_self(),
-        .alcor_pool_id = DEFAULT_POOL_ID,
-        .enabled = false,
-        .min_wax_to_burn = asset(0, WAX_SYMBOL),
-        .priority_window = 172800
-    });
-    // If deserialization fails with get(), fall back to contract owner auth
-    // We use get_self() auth as a safe fallback for migration
-    if (!has_auth(raw.admin)) {
-        require_auth(get_self());
-    }
-} else {
-    require_auth(get_self());
-}
-```
+**`src/lib/waxApi.ts`**
+- Remove `total_wax_cheesepowerz` from `ContractStats` interface
+- Add a new function `fetchCheesepowerzTotal()` that calls the Hyperion API:
+  ```
+  GET https://wax.eosusa.io/v2/history/get_actions
+    ?account=cheeseburner
+    &filter=eosio.token:transfer
+    &transfer.to=cheesepowerz
+    &limit=1000
+    &skip=0
+  ```
+  This returns all transfer actions from cheeseburner to cheesepowerz. The function will sum the WAX amounts from the response to get the lifetime total. It will handle pagination if there are more than 1000 transfers.
 
-However, `get_or_default` will still fail on partial reads. The cleanest approach is to simply check both auths:
+### 3. Frontend: New hook for CheesePowerz data
 
-```cpp
-if (config_singleton.exists()) {
-    // During migration from old struct, get() may fail.
-    // Allow contract owner to bypass admin check.
-    if (has_auth(get_self())) {
-        // Contract owner can always update config
-    } else {
-        configrow current = config_singleton.get();
-        require_auth(current.admin);
-    }
-} else {
-    require_auth(get_self());
-}
-```
+**`src/hooks/useCheesepowerzTotal.ts`** (new file)
+- Create a react-query hook that calls `fetchCheesepowerzTotal()`
+- Cache aggressively (staleTime: 60s) since historical data changes infrequently
+- Returns `{ totalWaxCheesepowerz, isLoading, isError }`
 
-This way:
-- If called with `get_self()` (contract owner) auth, it skips reading the old config entirely
-- If called with admin auth, it reads config normally (works after migration)
-- The user calls `setconfig` once using the **contract owner account** to migrate, then admin works going forward
+### 4. Frontend: Update existing hook and component
 
-## Steps for the User
+**`src/hooks/useContractStats.ts`**
+- Remove `totalWaxCheesepowerz` from this hook (it no longer comes from the stats table)
 
-1. We update the contract code
-2. You recompile and redeploy the contract
-3. Call `setconfig` using the **contract owner account** (not the admin account) -- this bypasses the broken config read
-4. After that, the admin account works normally for future `setconfig` calls
+**`src/components/TotalStats.tsx`**
+- Import and use the new `useCheesepowerzTotal` hook
+- CheesePowerz card stays in the grid, powered by Hyperion data instead of the stats table
+- Show skeleton/fallback independently for this card if Hyperion is slow
+
+## Why This Works
+
+- The contract stats table goes back to its original schema (no `total_wax_cheesepowerz`), fixing the ABI mismatch
+- The 5% WAX transfer to cheesepowerz still happens on every burn -- it's just not recorded in the stats table
+- The frontend queries Hyperion for the actual transfer history, which is the source of truth anyway
+- No data is lost -- Hyperion indexes every transfer permanently
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `contracts/cheeseburner.cpp` | Update `setconfig` to allow contract owner auth to bypass config read during migration |
+| `contracts/cheeseburner.hpp` | Remove `total_wax_cheesepowerz` from struct and `update_stats` signature |
+| `contracts/cheeseburner.cpp` | Remove cheesepowerz tracking from `update_stats`, `migrate`, and call sites |
+| `src/lib/waxApi.ts` | Remove field from interface, add `fetchCheesepowerzTotal()` Hyperion query |
+| `src/hooks/useCheesepowerzTotal.ts` | New hook for Hyperion-based CheesePowerz total |
+| `src/hooks/useContractStats.ts` | Remove `totalWaxCheesepowerz` |
+| `src/components/TotalStats.tsx` | Use new hook for CheesePowerz card |
 
