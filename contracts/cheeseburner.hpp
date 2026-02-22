@@ -41,6 +41,7 @@ public:
         uint64_t alcor_pool_id;     // Alcor pool ID for WAX/CHEESE pair (1252)
         bool enabled;               // Whether burns are enabled
         asset min_wax_to_burn;      // Minimum WAX required to proceed with burn
+        uint32_t priority_window;   // Priority window duration in seconds (default 172800 = 48hrs)
     };
     typedef singleton<"config"_n, configrow> config_table;
 
@@ -92,6 +93,20 @@ public:
     };
     typedef multi_index<"accounts"_n, token_account> token_accounts;
 
+    // Whitelist table - accounts with priority burn access
+    TABLE whitelist_row {
+        name account;
+        uint64_t primary_key() const { return account.value; }
+    };
+    typedef multi_index<"whitelist"_n, whitelist_row> whitelist_table;
+
+    // Burn tracking singleton - stores last burn timestamp for priority window
+    TABLE burntrack {
+        time_point_sec last_burn;
+        uint64_t primary_key() const { return 0; }
+    };
+    typedef singleton<"burners"_n, burntrack> burn_track_table;
+
     // ==================== ACTIONS ====================
 
     // Admin action to configure the contract
@@ -99,13 +114,18 @@ public:
         name admin,
         uint64_t alcor_pool_id,
         bool enabled,
-        asset min_wax_to_burn
+        asset min_wax_to_burn,
+        uint32_t priority_window
     );
 
     // Main burn action - caller receives 10% reward
     // Claims vote rewards, stakes 20% to CPU, swaps 80% for CHEESE,
     // nulls 63% value, rewards 10% to caller, sends 7% to xcheeseliqst
     ACTION burn(name caller);
+
+    // Whitelist management - admin only
+    ACTION addwhitelist(name account);
+    ACTION rmwhitelist(name account);
 
     // Transfer notification handler for CHEESE tokens
     // When CHEESE arrives from Alcor swap, distribute it

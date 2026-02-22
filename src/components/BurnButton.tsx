@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/contexts/WalletContext";
+import { useWaxData } from "@/hooks/useWaxData";
+import { formatCountdown } from "@/lib/waxApi";
 import { Loader2 } from "lucide-react";
 
 interface BurnButtonProps {
@@ -11,9 +13,11 @@ interface BurnButtonProps {
 export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps) => {
   const [isPressed, setIsPressed] = useState(false);
   const { isConnected, isTransacting, transact, session } = useWallet();
+  const { isPriorityWindow, isWhitelisted, priorityTimeRemaining } = useWaxData();
 
   const isContractUpdating = true; // Temporary flag — remove when contract is redeployed
-  const isDisabled = disabled || !isConnected || isTransacting || isContractUpdating;
+  const isPriorityBlocked = isPriorityWindow && !isWhitelisted;
+  const isDisabled = disabled || !isConnected || isTransacting || isContractUpdating || isPriorityBlocked;
 
   const handleClick = async () => {
     if (isDisabled || !session) return;
@@ -28,7 +32,7 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
         permission: 'active' 
       }],
       data: {
-        caller: callerName  // Pass caller to receive 10% reward
+        caller: callerName
       },
     };
 
@@ -53,6 +57,7 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
   const getHintText = () => {
     if (isContractUpdating) return "⚙️ Contract being updated — please wait";
     if (!isConnected) return "Connect wallet first";
+    if (isPriorityBlocked) return `🔒 Priority window — whitelisted accounts only (${formatCountdown(priorityTimeRemaining)})`;
     if (disabled) return "Waiting for cooldown";
     return null;
   };
@@ -71,7 +76,6 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
           "transition-all duration-150 ease-out",
           "focus:outline-none focus:ring-4 focus:ring-primary/50",
           "select-none",
-          // Active state (when claim is available and connected)
           !isDisabled && [
             "bg-cheese-gradient hover:bg-cheese-gradient-hover",
             "animate-pulse-cheese hover:cheese-glow-intense",
@@ -79,7 +83,6 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
             "cursor-pointer",
             isPressed && "scale-95 cheese-glow-intense"
           ],
-          // Disabled state (on cooldown or not connected)
           isDisabled && [
             "bg-muted",
             "text-muted-foreground",
@@ -90,13 +93,11 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
       >
         <span className="relative z-10 drop-shadow-lg">{getButtonText()}</span>
         
-        {/* Inner highlight - only show when active */}
         {!isDisabled && (
           <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-transparent via-transparent to-white/20 pointer-events-none" />
         )}
       </button>
       
-      {/* Hint text when disabled */}
       {getHintText() && (
         <span className="text-sm text-muted-foreground">{getHintText()}</span>
       )}
