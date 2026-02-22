@@ -192,7 +192,7 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     pending.set(updated_pending, get_self());
 
     // Update stats with WAX claimed, staked, and cheesepowerz (don't count burn yet)
-    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), to_powerz, false);
+    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), false);
 }
 
 ACTION cheeseburner::migrate(name caller) {
@@ -219,7 +219,6 @@ ACTION cheeseburner::migrate(name caller) {
         row.total_cheese_burned    = asset(0, CHEESE_SYMBOL);
         row.total_cheese_rewards   = asset(0, CHEESE_SYMBOL);
         row.total_cheese_liquidity = asset(0, CHEESE_SYMBOL);
-        row.total_wax_cheesepowerz = asset(0, WAX_SYMBOL);
     });
 }
 
@@ -297,7 +296,7 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     burn_cheese(to_burn);
 
     // Update statistics (count this as a completed burn)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, asset(0, WAX_SYMBOL), true);
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, true);
 
     // Log burn details
     action(
@@ -377,7 +376,7 @@ void cheeseburner::burn_cheese(asset quantity) {
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, asset wax_cheesepowerz, bool count_burn) {
+void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
@@ -389,7 +388,6 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
             row.total_cheese_burned = cheese_burned;
             row.total_cheese_rewards = cheese_reward;
             row.total_cheese_liquidity = cheese_liquidity;
-            row.total_wax_cheesepowerz = wax_cheesepowerz;
         });
     } else {
         stats.modify(itr, same_payer, [&](auto& row) {
@@ -399,7 +397,6 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
             row.total_cheese_burned += cheese_burned;
             row.total_cheese_rewards += cheese_reward;
             row.total_cheese_liquidity += cheese_liquidity;
-            row.total_wax_cheesepowerz += wax_cheesepowerz;
         });
     }
 }

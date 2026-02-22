@@ -74,7 +74,6 @@ public:
         asset total_cheese_burned;      // Total CHEESE burned
         asset total_cheese_rewards;     // Total CHEESE paid as caller rewards
         asset total_cheese_liquidity;   // Total CHEESE sent to xcheeseliqst
-        asset total_wax_cheesepowerz;   // Total WAX sent to cheesepowerz
         
         uint64_t primary_key() const { return 0; }
     };
@@ -150,7 +149,7 @@ private:
     asset get_wax_balance(name account);
     asset get_cheese_balance(name account);
     void burn_cheese(asset quantity);
-    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, asset wax_cheesepowerz, bool count_burn);
+    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn);
     configrow get_config();
     bool is_whitelisted(name account);
 };

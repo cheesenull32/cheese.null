@@ -9,7 +9,6 @@ export interface ContractStatsData {
   totalCheeseRewards: number;
   totalCheeseLiquidity: number;
   totalWaxCompounded: number;
-  totalWaxCheesepowerz: number;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -29,7 +28,6 @@ export function useContractStats(): ContractStatsData {
     totalCheeseRewards: parseAssetAmount(data?.total_cheese_rewards ?? ''),
     totalCheeseLiquidity: parseAssetAmount(data?.total_cheese_liquidity ?? ''),
     totalWaxCompounded: parseAssetAmount(data?.total_wax_staked ?? ''),
-    totalWaxCheesepowerz: parseAssetAmount(data?.total_wax_cheesepowerz ?? ''),
     isLoading,
     isError,
     refetch,
