@@ -17,11 +17,11 @@ ACTION cheeseburner::setconfig(
         // Migration-safe: read only the admin name (first 8 bytes) from raw singleton data.
         // This works whether the stored config has 4 fields (old) or 5 fields (new),
         // because the admin name is always the first field.
-        auto db_itr = db_find_i64(get_self().value, get_self().value, "config"_n.value, "config"_n.value);
+        auto db_itr = eosio::internal_use_do_not_use::db_find_i64(get_self().value, get_self().value, "config"_n.value, "config"_n.value);
         if (db_itr >= 0) {
             // Read just enough bytes for a name (8 bytes)
             char buf[8];
-            auto bytes_read = db_get_i64(db_itr, buf, sizeof(buf));
+            auto bytes_read = eosio::internal_use_do_not_use::db_get_i64(db_itr, buf, sizeof(buf));
             check(bytes_read >= 8, "Corrupted config data");
             name stored_admin = name(*reinterpret_cast<uint64_t*>(buf));
             require_auth(stored_admin);
@@ -290,6 +290,7 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
 
     // Clear pending burn
     pending.remove();
+}
 
 // ==================== HELPERS ====================
 
