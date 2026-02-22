@@ -14,8 +14,20 @@ ACTION cheeseburner::setconfig(
     config_table config_singleton(get_self(), get_self().value);
     
     if (config_singleton.exists()) {
-        configrow current = config_singleton.get();
-        require_auth(current.admin);
+        // Migration-safe: read only the admin name (first 8 bytes) from raw singleton data.
+        // This works whether the stored config has 4 fields (old) or 5 fields (new),
+        // because the admin name is always the first field.
+        auto db_itr = db_find_i64(get_self().value, get_self().value, "config"_n.value, "config"_n.value);
+        if (db_itr >= 0) {
+            // Read just enough bytes for a name (8 bytes)
+            char buf[8];
+            auto bytes_read = db_get_i64(db_itr, buf, sizeof(buf));
+            check(bytes_read >= 8, "Corrupted config data");
+            name stored_admin = name(*reinterpret_cast<uint64_t*>(buf));
+            require_auth(stored_admin);
+            // Remove old singleton so it can be re-created with new format
+            config_singleton.remove();
+        }
     } else {
         // First time setup - require contract authority
         require_auth(get_self());
