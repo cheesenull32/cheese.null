@@ -1,5 +1,6 @@
 import { Gift, TrendingUp, Droplet, Flame, Zap } from 'lucide-react';
 import { useContractStats } from '@/hooks/useContractStats';
+import { useCheesepowerzTotal } from '@/hooks/useCheesepowerzTotal';
 import { formatWaxAmount, formatCheeseAmount } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,10 +12,10 @@ export const TotalStats = () => {
     totalCheeseRewards,
     totalCheeseLiquidity,
     totalWaxCompounded,
-    totalWaxCheesepowerz,
     isLoading,
     isError,
   } = useContractStats();
+  const { totalWaxCheesepowerz, isLoading: isPowerzLoading } = useCheesepowerzTotal();
 
   return (
     <Card className="w-full max-w-md bg-card/60 backdrop-blur border-cheese/10">
@@ -76,9 +77,13 @@ export const TotalStats = () => {
                 <Zap className="w-3 h-3" />
                 <span className="text-[10px] font-medium">CheesePowerz</span>
               </div>
-              <p className="text-xs font-semibold text-cheese">
-                {formatWaxAmount(totalWaxCheesepowerz)}
-              </p>
+              {isPowerzLoading ? (
+                <Skeleton className="h-4 w-16 mx-auto bg-muted" />
+              ) : (
+                <p className="text-xs font-semibold text-cheese">
+                  {formatWaxAmount(totalWaxCheesepowerz)}
+                </p>
+              )}
               <p className="text-[10px] text-muted-foreground">WAX</p>
             </div>
 
