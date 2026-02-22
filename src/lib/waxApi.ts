@@ -72,6 +72,22 @@ export interface ContractStats {
   total_cheese_liquidity: string;
 }
 
+export interface ContractConfig {
+  admin: string;
+  alcor_pool_id: number;
+  enabled: boolean;
+  min_wax_to_burn: string;
+  priority_window: number;
+}
+
+export interface WhitelistRow {
+  account: string;
+}
+
+export interface BurnTrack {
+  last_burn: string;
+}
+
 // Parse asset string like "123.45678900 WAX" to number
 export function parseAssetAmount(assetString: string): number {
   if (!assetString) return 0;
@@ -108,6 +124,74 @@ export async function fetchContractStats(contractAccount: string): Promise<Contr
     return null;
   } catch (error) {
     console.error('Error fetching contract stats:', error);
+    return null;
+  }
+}
+
+export async function fetchContractConfig(contractAccount: string): Promise<ContractConfig | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: contractAccount,
+        scope: contractAccount,
+        table: 'config',
+        limit: 1,
+        json: true,
+      }),
+    });
+    if (!response.ok) throw new Error(`WAX API error: ${response.status}`);
+    const data = await response.json();
+    if (data.rows && data.rows.length > 0) return data.rows[0] as ContractConfig;
+    return null;
+  } catch (error) {
+    console.error('Error fetching contract config:', error);
+    return null;
+  }
+}
+
+export async function fetchWhitelist(contractAccount: string): Promise<WhitelistRow[]> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: contractAccount,
+        scope: contractAccount,
+        table: 'whitelist',
+        limit: 100,
+        json: true,
+      }),
+    });
+    if (!response.ok) throw new Error(`WAX API error: ${response.status}`);
+    const data = await response.json();
+    return (data.rows || []) as WhitelistRow[];
+  } catch (error) {
+    console.error('Error fetching whitelist:', error);
+    return [];
+  }
+}
+
+export async function fetchBurnTrack(contractAccount: string): Promise<BurnTrack | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: contractAccount,
+        scope: contractAccount,
+        table: 'burners',
+        limit: 1,
+        json: true,
+      }),
+    });
+    if (!response.ok) throw new Error(`WAX API error: ${response.status}`);
+    const data = await response.json();
+    if (data.rows && data.rows.length > 0) return data.rows[0] as BurnTrack;
+    return null;
+  } catch (error) {
+    console.error('Error fetching burn track:', error);
     return null;
   }
 }
