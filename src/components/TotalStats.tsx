@@ -35,7 +35,7 @@ export const TotalStats = () => {
           {isLoading ? (
             <Skeleton className="h-7 w-40 mx-auto bg-muted" />
           ) : isError ? (
-            <p className="text-destructive text-xs">Error loading</p>
+            <p className="text-muted-foreground text-xs">Stats temporarily unavailable</p>
           ) : (
             <p className="text-xl font-bold text-cheese-gradient">
               {formatCheeseAmount(totalCheeseNulled)} <span className="text-sm text-muted-foreground">CHEESE</span>
@@ -44,7 +44,7 @@ export const TotalStats = () => {
         </div>
 
         {/* Distribution Breakdown */}
-        {!isLoading && !isError && (
+        {!isLoading && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
             {/* Rewards */}
             <div className="text-center space-y-0.5">
@@ -97,7 +97,7 @@ export const TotalStats = () => {
         )}
 
         {/* Total Nulls Count */}
-        {!isLoading && !isError && (
+        {!isLoading && (
           <div className="text-center pt-1 border-t border-cheese/10">
             <p className="text-xs text-muted-foreground">
               Total Nulls: <span className="font-semibold text-cheese">{totalBurns.toLocaleString()}</span>
