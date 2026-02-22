@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, CheckCircle, TrendingUp, Droplet, Gift, Zap } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp, Droplet } from 'lucide-react';
 import { useWaxData } from '@/hooks/useWaxData';
 import { formatWaxAmount, formatCheeseAmount, formatCountdown } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,10 +12,9 @@ interface BurnStatsProps {
 export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
   const { 
     cheeseBurnAmount, 
-    cheeseLiquidityAmount,
     cheeseRewardAmount,
+    cheeseLiquidityAmount,
     waxStakeAmount,
-    waxCheesepowerzAmount,
     canClaim, 
     timeUntilNextClaim, 
     isLoading, 
@@ -50,7 +49,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
 
           {/* Distribution Breakdown */}
           {!isLoading && !isError && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+            <div className="grid grid-cols-3 gap-3 pt-2">
               {/* Your Reward */}
               <div className="text-center space-y-1">
                 <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
@@ -73,18 +72,6 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
                   {formatCheeseAmount(cheeseLiquidityAmount)}
                 </p>
                 <p className="text-xs text-muted-foreground">CHEESE</p>
-              </div>
-
-              {/* CheesePowerz */}
-              <div className="text-center space-y-1">
-                <div className="flex items-center justify-center gap-1.5 text-muted-foreground">
-                  <Zap className="w-3 h-3" />
-                  <span className="text-xs font-medium">CheesePowerz</span>
-                </div>
-                <p className="text-sm font-semibold text-cheese">
-                  {formatWaxAmount(waxCheesepowerzAmount)}
-                </p>
-                <p className="text-xs text-muted-foreground">WAX</p>
               </div>
 
               {/* Compound Stake */}

@@ -12,19 +12,47 @@ export const BurnButton = ({ disabled = false, onBurnSuccess }: BurnButtonProps)
   const [isPressed, setIsPressed] = useState(false);
   const { isConnected, isTransacting, transact, session } = useWallet();
 
-  const isDisabled = true; // Contract being updated
+  const isDisabled = disabled || !isConnected || isTransacting;
 
   const handleClick = async () => {
-    return; // Disabled during contract update
+    if (isDisabled || !session) return;
+
+    const callerName = session.actor.toString();
+    
+    const burnAction = {
+      account: 'cheeseburner',
+      name: 'burn',
+      authorization: [{ 
+        actor: callerName,
+        permission: 'active' 
+      }],
+      data: {
+        caller: callerName  // Pass caller to receive 10% reward
+      },
+    };
+
+    const result = await transact([burnAction]);
+    if (result && onBurnSuccess) {
+      onBurnSuccess();
+    }
   };
 
   const getButtonText = () => {
+    if (isTransacting) {
+      return (
+        <span className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          NULLING...
+        </span>
+      );
+    }
     return "NULL";
   };
 
   const getHintText = () => {
     if (!isConnected) return "Connect wallet first";
-    return "Please wait — contract being updated";
+    if (disabled) return "Waiting for cooldown";
+    return null;
   };
 
   return (

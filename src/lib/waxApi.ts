@@ -72,45 +72,6 @@ export interface ContractStats {
   total_cheese_liquidity: string;
 }
 
-// Hyperion API for querying on-chain transfer history
-const HYPERION_API_ENDPOINT = 'https://wax.eosusa.io/v2/history/get_actions';
-
-export async function fetchCheesepowerzTotal(): Promise<number> {
-  let total = 0;
-  let skip = 0;
-  const limit = 1000;
-
-  while (true) {
-    const params = new URLSearchParams({
-      account: 'cheeseburner',
-      filter: 'eosio.token:transfer',
-      'transfer.to': 'cheesepowerz',
-      limit: limit.toString(),
-      skip: skip.toString(),
-    });
-
-    const response = await fetch(`${HYPERION_API_ENDPOINT}?${params}`);
-    if (!response.ok) {
-      throw new Error(`Hyperion API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const actions = data.actions ?? [];
-
-    for (const action of actions) {
-      const transferData = action.act?.data;
-      if (transferData?.to === 'cheesepowerz' && transferData?.quantity) {
-        total += parseAssetAmount(transferData.quantity);
-      }
-    }
-
-    if (actions.length < limit) break;
-    skip += limit;
-  }
-
-  return total;
-}
-
 // Parse asset string like "123.45678900 WAX" to number
 export function parseAssetAmount(assetString: string): number {
   if (!assetString) return 0;
@@ -217,9 +178,9 @@ export function calculateCheesePerWax(poolData: AlcorPoolData): number {
   return cheeseReserve / waxReserve;
 }
 
-// Format WAX amount with 4 decimal precision
+// Format WAX amount with proper precision
 export function formatWaxAmount(amount: number): string {
-  return amount.toFixed(4);
+  return amount.toFixed(8);
 }
 
 // Format CHEESE amount with proper precision

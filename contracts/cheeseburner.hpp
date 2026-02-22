@@ -26,9 +26,6 @@ static constexpr name BURN_ACCOUNT = "eosio.null"_n;
 // Liquidity staking account
 static constexpr name CHEESE_LIQ_ACCOUNT = "xcheeseliqst"_n;
 
-// CheesePowerz account
-static constexpr name CHEESE_POWER_ACCOUNT = "cheesepowerz"_n;
-
 // Default Alcor pool ID for WAX/CHEESE
 static constexpr uint64_t DEFAULT_POOL_ID = 1252;
 
@@ -44,23 +41,14 @@ public:
         uint64_t alcor_pool_id;     // Alcor pool ID for WAX/CHEESE pair (1252)
         bool enabled;               // Whether burns are enabled
         asset min_wax_to_burn;      // Minimum WAX required to proceed with burn
-        uint32_t priority_window;   // Whitelist-only window in seconds (default 172800 = 48h)
     };
     typedef singleton<"config"_n, configrow> config_table;
 
-    // Whitelist table - accounts with priority burn access
-    TABLE whitelist_row {
-        name account;
-        uint64_t primary_key() const { return account.value; }
-    };
-    typedef multi_index<"whitelist"_n, whitelist_row> whitelist_table;
-
+    // Statistics table
     // Pending burn caller - stores who initiated the current burn
     TABLE pendingburnr {
         name caller;               // Account that called burn()
         time_point_sec timestamp;  // When burn was initiated
-        asset wax_claimed;         // Total WAX received from vote rewards
-        asset wax_swapped;         // The 80% portion sent to Alcor
         
         uint64_t primary_key() const { return 0; }
     };
@@ -80,11 +68,12 @@ public:
     typedef multi_index<"stats"_n, stats_row> stats_table;
 
     // Alcor AMM Swap pools table (external - read only)
+    // Matches actual swap.alcor pools table schema
     TABLE alcor_pool {
         uint64_t id;
         bool active;
-        extended_asset tokenA;
-        extended_asset tokenB;
+        extended_asset tokenA;  // First token (e.g., WAX)
+        extended_asset tokenB;  // Second token (e.g., CHEESE)
         uint32_t fee;
         uint32_t feeProtocol;
         int32_t tickSpacing;
@@ -108,26 +97,21 @@ public:
         name admin,
         uint64_t alcor_pool_id,
         bool enabled,
-        asset min_wax_to_burn,
-        uint32_t priority_window
+        asset min_wax_to_burn
     );
 
-    // Main burn action - caller receives 12.5% of CHEESE as reward
-    // Claims vote rewards, stakes 15% to CPU, sends 5% to cheesepowerz,
-    // swaps 80% for CHEESE: 75% nulled, 12.5% xCHEESE, 12.5% caller reward
+    // Main burn action - caller receives 10% reward
+    // Claims vote rewards, stakes 20% to CPU, swaps 80% for CHEESE,
+    // nulls 63% value, rewards 10% to caller, sends 7% to xcheeseliqst
     ACTION burn(name caller);
 
-    // Admin action to add account to whitelist (callable from block explorer)
-    ACTION addwhitelist(name account);
-
-    // Admin action to remove account from whitelist (callable from block explorer)
-    ACTION rmwhitelist(name account);
-
     // Transfer notification handler for CHEESE tokens
+    // When CHEESE arrives from Alcor swap, distribute it
     [[eosio::on_notify("cheeseburger::transfer")]]
     void on_cheese_transfer(name from, name to, asset quantity, string memo);
 
     // Transfer notification handler for WAX tokens
+    // When WAX arrives from vote rewards, stake 20% and swap 80% for CHEESE
     [[eosio::on_notify("eosio.token::transfer")]]
     void on_wax_transfer(name from, name to, asset quantity, string memo);
 
@@ -139,17 +123,24 @@ public:
         asset cheese_burned
     );
 
-    // One-time migration action to fix stats row with missing fields
-    ACTION migrate(name caller);
-
 private:
     // ==================== HELPERS ====================
 
+    // Get current WAX/CHEESE rate from Alcor AMM swap pool
     double get_wax_cheese_rate(uint64_t pool_id);
+
+    // Get WAX balance of an account
     asset get_wax_balance(name account);
+
+    // Get CHEESE balance of an account
     asset get_cheese_balance(name account);
+
+    // Burn CHEESE tokens by sending to eosio.null
     void burn_cheese(asset quantity);
-    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn);
+
+    // Update statistics
+    void update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity);
+
+    // Get or create default config
     configrow get_config();
-    bool is_whitelisted(name account);
 };

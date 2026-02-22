@@ -44,7 +44,6 @@
     "@tanstack/react-query": "^5.83.0",
     "@wharfkit/session": "^1.6.1",
     "@wharfkit/wallet-plugin-anchor": "^1.6.1",
-    "@wharfkit/wallet-plugin-cloudwallet": "^1.6.2",
     "@wharfkit/web-renderer": "^1.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

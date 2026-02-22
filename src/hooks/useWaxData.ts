@@ -17,11 +17,10 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
-  cheeseBurnAmount: number;       // 75% of CHEESE (60% of original WAX value)
-  cheeseLiquidityAmount: number;  // 12.5% of CHEESE (10% of original WAX value)
-  cheeseRewardAmount: number;     // 12.5% of CHEESE (10% of original WAX value)
-  waxStakeAmount: number;         // 15% of WAX staked to CPU
-  waxCheesepowerzAmount: number;  // 5% of WAX sent to cheesepowerz
+  cheeseBurnAmount: number;       // 63% of original value (78.75% of CHEESE)
+  cheeseRewardAmount: number;     // 10% of original value (12.5% of CHEESE)
+  cheeseLiquidityAmount: number;  // 7% of original value (8.75% of CHEESE)
+  waxStakeAmount: number;         // 20% of WAX staked to CPU
   cheesePerWax: number;
   canClaim: boolean;
   timeUntilNextClaim: number;
@@ -59,8 +58,8 @@ export function useWaxData(): WaxData {
     staleTime: 10000,
   });
 
-  // Use last_claim_time for cooldown (only updates on actual claimgbmvote, not on staking)
-  const lastClaimTime = voterQuery.data?.last_claim_time ?? null;
+  // Use unpaid_voteshare_last_updated for cooldown (matches WAX block explorers)
+  const lastClaimTime = voterQuery.data?.unpaid_voteshare_last_updated ?? null;
 
   // Update countdown timer every second
   useEffect(() => {
@@ -85,22 +84,20 @@ export function useWaxData(): WaxData {
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   
   // Calculate distribution breakdown
-  // 15% of WAX goes to CPU stake
-  const waxStakeAmount = claimableWax * 0.15;
-  // 5% of WAX goes to cheesepowerz
-  const waxCheesepowerzAmount = claimableWax * 0.05;
+  // 20% of WAX goes to CPU stake
+  const waxStakeAmount = claimableWax * 0.20;
   
   // 80% of WAX is swapped for CHEESE
   const waxToSwap = claimableWax * 0.80;
   const estimatedCheese = waxToSwap * cheesePerWax;
   
   // Of the swapped CHEESE:
-  // - 60/80 (75%) is nulled
-  // - 10/80 (12.5%) is xCHEESE (sent to xcheeseliqst)
-  // - 10/80 (12.5%) is caller reward
+  // - 63/80 (78.75%) is nulled
+  // - 10/80 (12.5%) is reward
+  // - 7/80 (8.75%) is xCHEESE (sent to xcheeseliqst)
+  const cheeseBurnAmount = estimatedCheese * (63 / 80);
   const cheeseRewardAmount = estimatedCheese * (10 / 80);
-  const cheeseLiquidityAmount = estimatedCheese * (10 / 80);
-  const cheeseBurnAmount = estimatedCheese * (60 / 80);
+  const cheeseLiquidityAmount = estimatedCheese * (7 / 80);
   
   const canClaim = lastClaimTime ? checkCanClaim(lastClaimTime) : false;
 
@@ -114,10 +111,9 @@ export function useWaxData(): WaxData {
     claimableWax,
     estimatedCheese,
     cheeseBurnAmount,
-    cheeseLiquidityAmount,
     cheeseRewardAmount,
+    cheeseLiquidityAmount,
     waxStakeAmount,
-    waxCheesepowerzAmount,
     cheesePerWax,
     canClaim,
     timeUntilNextClaim,

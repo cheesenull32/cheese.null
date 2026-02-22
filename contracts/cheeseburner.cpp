@@ -7,18 +7,18 @@ ACTION cheeseburner::setconfig(
     name admin,
     uint64_t alcor_pool_id,
     bool enabled,
-    asset min_wax_to_burn,
-    uint32_t priority_window
+    asset min_wax_to_burn
 ) {
+    // Get current config to check admin
     config_table config_singleton(get_self(), get_self().value);
-
-    if (!has_auth(get_self())) {
-        // Non-owner caller: must read config to verify admin
-        check(config_singleton.exists(), "Contract not configured. Run setconfig first.");
+    
+    if (config_singleton.exists()) {
         configrow current = config_singleton.get();
         require_auth(current.admin);
+    } else {
+        // First time setup - require contract authority
+        require_auth(get_self());
     }
-    // If has_auth(get_self()), skip all reads -- contract owner can always update
 
     // Validate inputs
     check(is_account(admin), "Admin account does not exist");
@@ -31,41 +31,29 @@ ACTION cheeseburner::setconfig(
         .admin = admin,
         .alcor_pool_id = alcor_pool_id,
         .enabled = enabled,
-        .min_wax_to_burn = min_wax_to_burn,
-        .priority_window = priority_window
+        .min_wax_to_burn = min_wax_to_burn
     };
     config_singleton.set(new_config, get_self());
 }
 
 ACTION cheeseburner::burn(name caller) {
+    // Caller must authorize - they will receive 10% reward
     require_auth(caller);
     
+    // Get and validate config
     configrow config = get_config();
     check(config.enabled, "Burns are currently disabled");
-
-    // Check whitelist priority window
-    // Read last burn timestamp from stats (use pending burn or last logburn time)
-    // For simplicity, we check the pending burn table -- if a recent burn completed,
-    // the cooldown is enforced by canClaim on the frontend and last_claim_time on chain.
-    // The priority window extends the cooldown for non-whitelisted callers.
-    // We use the voter info last_claim_time which is updated on each claimgbmvote.
-    // Since burn() calls claimgbmvote, last_claim_time reflects the last burn.
-    // However, we can't easily read eosio voters table here, so we use a simpler approach:
-    // The frontend already enforces 24h cooldown. The priority window adds 48h on top.
-    // We store last_burn_time in the pending burn singleton after completion.
-    // For now, we'll check if caller is whitelisted when priority_window > 0.
-    // The actual time-based check requires reading the last burn time.
 
     // Store caller for later use in on_cheese_transfer
     pending_burn_table pending(get_self(), get_self().value);
     pending.set({
         .caller = caller,
-        .timestamp = current_time_point(),
-        .wax_claimed = asset(0, WAX_SYMBOL),
-        .wax_swapped = asset(0, WAX_SYMBOL)
+        .timestamp = current_time_point()
     }, get_self());
 
     // Claim vote rewards from eosio
+    // The claimed WAX will arrive via eosio.token::transfer notification,
+    // which triggers on_wax_transfer to handle staking and swapping
     action(
         permission_level{get_self(), "active"_n},
         EOSIO_CONTRACT,
@@ -74,89 +62,49 @@ ACTION cheeseburner::burn(name caller) {
     ).send();
 }
 
-// ==================== WHITELIST ACTIONS ====================
-
-ACTION cheeseburner::addwhitelist(name account) {
-    configrow config = get_config();
-    require_auth(config.admin);
-
-    check(is_account(account), "Account does not exist");
-
-    whitelist_table whitelist(get_self(), get_self().value);
-    auto itr = whitelist.find(account.value);
-    check(itr == whitelist.end(), "Account is already whitelisted");
-
-    whitelist.emplace(get_self(), [&](auto& row) {
-        row.account = account;
-    });
-}
-
-ACTION cheeseburner::rmwhitelist(name account) {
-    configrow config = get_config();
-    require_auth(config.admin);
-
-    whitelist_table whitelist(get_self(), get_self().value);
-    auto itr = whitelist.find(account.value);
-    check(itr != whitelist.end(), "Account is not whitelisted");
-
-    whitelist.erase(itr);
-}
-
 // ==================== WAX TRANSFER HANDLER ====================
 
 void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string memo) {
+    // Ignore outgoing transfers and self-transfers
     if (to != get_self() || from == get_self()) {
         return;
     }
 
+    // Only process WAX from vote reward sources
     if (from != "eosio.voters"_n && from != "eosio.vpay"_n && from != "eosio.bpay"_n) {
-        return;
+        return; // Silently ignore other WAX transfers (e.g., manual deposits)
     }
 
     check(quantity.symbol == WAX_SYMBOL, "Only WAX tokens expected");
     check(quantity.amount > 0, "Amount must be positive");
 
+    // Verify there's a pending burn
     pending_burn_table pending(get_self(), get_self().value);
     check(pending.exists(), "No pending burn found - call burn() first");
 
+    // Get config for pool ID
     configrow config = get_config();
 
-    // Calculate 15% for CPU staking, 5% for cheesepowerz, 80% for swap
-    int64_t stake_amount = quantity.amount * 15 / 100;
-    int64_t powerz_amount = quantity.amount * 5 / 100;
-    int64_t swap_amount = quantity.amount - stake_amount - powerz_amount;
+    // Use the incoming quantity (the claimed vote reward)
+    // Calculate 20% for CPU staking, 80% for swap
+    int64_t stake_amount = quantity.amount * 20 / 100;
+    int64_t swap_amount = quantity.amount - stake_amount;
     
     asset to_stake = asset(stake_amount, WAX_SYMBOL);
-    asset to_powerz = asset(powerz_amount, WAX_SYMBOL);
     asset to_swap = asset(swap_amount, WAX_SYMBOL);
 
-    // Stake 15% as CPU to self
+    // Stake 20% as CPU to self (increases vote weight)
     if (to_stake.amount > 0) {
         action(
             permission_level{get_self(), "active"_n},
             EOSIO_CONTRACT,
             "delegatebw"_n,
             make_tuple(
-                get_self(),
-                get_self(),
-                asset(0, WAX_SYMBOL),
-                to_stake,
-                false
-            )
-        ).send();
-    }
-
-    // Send 5% to cheesepowerz
-    if (to_powerz.amount > 0) {
-        action(
-            permission_level{get_self(), "active"_n},
-            EOSIO_TOKEN,
-            "transfer"_n,
-            make_tuple(
-                get_self(),
-                CHEESE_POWER_ACCOUNT,
-                to_powerz,
-                string("WAX allocation to cheesepowerz")
+                get_self(),                    // from
+                get_self(),                    // receiver (stake to self)
+                asset(0, WAX_SYMBOL),          // stake_net_quantity (0 NET)
+                to_stake,                      // stake_cpu_quantity
+                false                          // transfer (keep ownership)
             )
         ).send();
     }
@@ -172,48 +120,18 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
         EOSIO_TOKEN,
         "transfer"_n,
         make_tuple(
-            get_self(),
-            ALCOR_SWAP_CONTRACT,
-            to_swap,
-            swap_memo
+            get_self(),             // from
+            ALCOR_SWAP_CONTRACT,    // to
+            to_swap,                // quantity (80% of WAX)
+            swap_memo               // swap instruction
         )
     ).send();
 
-    // Store WAX amounts in pending burn for logburn
-    pendingburnr updated_pending = pending.get();
-    updated_pending.wax_claimed = quantity;
-    updated_pending.wax_swapped = to_swap;
-    pending.set(updated_pending, get_self());
+    // Update stats with WAX claimed and staked
+    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL));
 
-    // Update stats with WAX claimed, staked, and cheesepowerz (don't count burn yet)
-    update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), false);
-}
-
-ACTION cheeseburner::migrate(name caller) {
-    require_auth(get_self());
-
-    // Use raw DB intrinsics to delete without deserializing
-    // multi_index::find/erase would crash on schema-mismatched rows
-    auto raw_itr = eosio::internal_use_do_not_use::db_find_i64(
-        get_self().value,   // code
-        get_self().value,   // scope
-        "stats"_n.value,    // table
-        0                   // primary key
-    );
-    if (raw_itr >= 0) {
-        eosio::internal_use_do_not_use::db_remove_i64(raw_itr);
-    }
-
-    // Now emplace a fresh row with the correct schema
-    stats_table stats_tbl(get_self(), get_self().value);
-    stats_tbl.emplace(get_self(), [&](auto& row) {
-        row.total_burns            = 0;
-        row.total_wax_claimed      = asset(0, WAX_SYMBOL);
-        row.total_wax_staked       = asset(0, WAX_SYMBOL);
-        row.total_cheese_burned    = asset(0, CHEESE_SYMBOL);
-        row.total_cheese_rewards   = asset(0, CHEESE_SYMBOL);
-        row.total_cheese_liquidity = asset(0, CHEESE_SYMBOL);
-    });
+    // The CHEESE will arrive via on_cheese_transfer notification
+    // which will then split: 78.75% nulled, 12.5% reward, 8.75% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
@@ -222,41 +140,51 @@ ACTION cheeseburner::logburn(
     asset wax_swapped,
     asset cheese_burned
 ) {
+    // Only the contract itself can call this action
     require_auth(get_self());
+    
+    // Notify the caller so it appears in their tx history
     require_recipient(caller);
+    
+    // The action data itself IS the log - block explorers show all parameters
 }
 
-// ==================== CHEESE TRANSFER HANDLER ====================
+// ==================== TRANSFER HANDLER ====================
 
 void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string memo) {
+    // Ignore outgoing transfers and self-transfers
     if (to != get_self() || from == get_self()) {
         return;
     }
 
+    // Only process CHEESE from Alcor swap
     if (from != ALCOR_SWAP_CONTRACT) {
+        // Reject unexpected CHEESE transfers
         check(false, "This contract only accepts CHEESE from Alcor swaps");
     }
 
     check(quantity.symbol == CHEESE_SYMBOL, "Only CHEESE tokens accepted");
     check(quantity.amount > 0, "Amount must be positive");
 
+    // Get the caller who initiated this burn
     pending_burn_table pending(get_self(), get_self().value);
     check(pending.exists(), "No pending burn found");
     pendingburnr burn_info = pending.get();
 
-    // Calculate split for CHEESE portion (of the 80% swapped):
-    // - 12.5% caller reward (10/80)
-    // - 12.5% xCHEESE liquidity (10/80)
-    // - 75% burned (remainder)
-    int64_t reward_amount = quantity.amount * 10 / 80;
-    int64_t liquidity_amount = quantity.amount * 10 / 80;
-    int64_t burn_amount = quantity.amount - liquidity_amount - reward_amount;
+    // Calculate split for CHEESE portion
+    // Since we only swapped 80% of WAX, we need:
+    // - Null: 63/80 = 78.75% of CHEESE (63% of original value)
+    // - Reward: 10/80 = 12.5% of CHEESE (10% of original value)
+    // - xCHEESE: 7/80 = 8.75% of CHEESE (7% of original value)
+    int64_t reward_amount = quantity.amount * 10 / 80;    // 12.5%
+    int64_t liquidity_amount = quantity.amount * 7 / 80;  // 8.75%
+    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 78.75%
     
     asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);
     asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
 
-    // Send caller reward
+    // Send reward to caller
     if (reward.amount > 0) {
         action(
             permission_level{get_self(), "active"_n},
@@ -266,7 +194,7 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
                 get_self(),
                 burn_info.caller,
                 reward,
-                string("CHEESE burn caller reward")
+                string("Burn reward - thank you for burning CHEESE!")
             )
         ).send();
     }
@@ -289,16 +217,8 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     // Burn the rest
     burn_cheese(to_burn);
 
-    // Update statistics (count this as a completed burn)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, true);
-
-    // Log burn details
-    action(
-        permission_level{get_self(), "active"_n},
-        get_self(),
-        "logburn"_n,
-        make_tuple(burn_info.caller, burn_info.wax_claimed, burn_info.wax_swapped, to_burn)
-    ).send();
+    // Update statistics (wax_staked is tracked in burn() action)
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity);
 
     // Clear pending burn
     pending.remove();
@@ -307,11 +227,13 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
 // ==================== HELPERS ====================
 
 double cheeseburner::get_wax_cheese_rate(uint64_t pool_id) {
+    // Read from swap.alcor pools table
     alcor_pools pools(ALCOR_SWAP_CONTRACT, ALCOR_SWAP_CONTRACT.value);
     auto pool_itr = pools.find(pool_id);
     
     check(pool_itr != pools.end(), "Alcor swap pool not found");
     
+    // Determine which token is WAX and which is CHEESE
     double wax_reserve, cheese_reserve;
     uint8_t wax_precision, cheese_precision;
     
@@ -327,13 +249,14 @@ double cheeseburner::get_wax_cheese_rate(uint64_t pool_id) {
         cheese_precision = pool_itr->tokenA.quantity.symbol.precision();
     }
     
+    // Use actual precision from pool assets for normalization
     double wax_divisor = pow(10.0, wax_precision);
     double cheese_divisor = pow(10.0, cheese_precision);
     
     wax_reserve /= wax_divisor;
     cheese_reserve /= cheese_divisor;
     
-    return cheese_reserve / wax_reserve;
+    return cheese_reserve / wax_reserve; // CHEESE per WAX
 }
 
 asset cheeseburner::get_wax_balance(name account) {
@@ -362,21 +285,21 @@ void cheeseburner::burn_cheese(asset quantity) {
         CHEESE_CONTRACT,
         "transfer"_n,
         make_tuple(
-            get_self(),
-            BURN_ACCOUNT,
-            quantity,
+            get_self(),         // from (the contract)
+            BURN_ACCOUNT,       // to (eosio.null)
+            quantity,           // amount
             string("CHEESE burned via cheeseburner")
         )
     ).send();
 }
 
-void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity, bool count_burn) {
+void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset cheese_burned, asset cheese_reward, asset cheese_liquidity) {
     stats_table stats(get_self(), get_self().value);
     
     auto itr = stats.find(0);
     if (itr == stats.end()) {
         stats.emplace(get_self(), [&](auto& row) {
-            row.total_burns = count_burn ? 1 : 0;
+            row.total_burns = 1;
             row.total_wax_claimed = wax_claimed;
             row.total_wax_staked = wax_staked;
             row.total_cheese_burned = cheese_burned;
@@ -385,7 +308,7 @@ void cheeseburner::update_stats(asset wax_claimed, asset wax_staked, asset chees
         });
     } else {
         stats.modify(itr, same_payer, [&](auto& row) {
-            if (count_burn) row.total_burns += 1;
+            row.total_burns += 1;
             row.total_wax_claimed += wax_claimed;
             row.total_wax_staked += wax_staked;
             row.total_cheese_burned += cheese_burned;
@@ -399,9 +322,4 @@ cheeseburner::configrow cheeseburner::get_config() {
     config_table config_singleton(get_self(), get_self().value);
     check(config_singleton.exists(), "Contract not configured. Run setconfig first.");
     return config_singleton.get();
-}
-
-bool cheeseburner::is_whitelisted(name account) {
-    whitelist_table whitelist(get_self(), get_self().value);
-    return whitelist.find(account.value) != whitelist.end();
 }

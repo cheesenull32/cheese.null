@@ -1,6 +1,5 @@
-import { Gift, TrendingUp, Droplet, Flame, Zap } from 'lucide-react';
+import { Gift, TrendingUp, Droplet, Flame } from 'lucide-react';
 import { useContractStats } from '@/hooks/useContractStats';
-import { useCheesepowerzTotal } from '@/hooks/useCheesepowerzTotal';
 import { formatWaxAmount, formatCheeseAmount } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +14,6 @@ export const TotalStats = () => {
     isLoading,
     isError,
   } = useContractStats();
-  const { totalWaxCheesepowerz, isLoading: isPowerzLoading } = useCheesepowerzTotal();
 
   return (
     <Card className="w-full max-w-md bg-card/60 backdrop-blur border-cheese/10">
@@ -36,7 +34,7 @@ export const TotalStats = () => {
           {isLoading ? (
             <Skeleton className="h-7 w-40 mx-auto bg-muted" />
           ) : isError ? (
-            <p className="text-muted-foreground text-xs">Stats temporarily unavailable</p>
+            <p className="text-destructive text-xs">Error loading</p>
           ) : (
             <p className="text-xl font-bold text-cheese-gradient">
               {formatCheeseAmount(totalCheeseNulled)} <span className="text-sm text-muted-foreground">CHEESE</span>
@@ -45,8 +43,8 @@ export const TotalStats = () => {
         </div>
 
         {/* Distribution Breakdown */}
-        {!isLoading && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+        {!isLoading && !isError && (
+          <div className="grid grid-cols-3 gap-3 pt-1">
             {/* Rewards */}
             <div className="text-center space-y-0.5">
               <div className="flex items-center justify-center gap-1 text-muted-foreground">
@@ -71,22 +69,6 @@ export const TotalStats = () => {
               <p className="text-[10px] text-muted-foreground">CHEESE</p>
             </div>
 
-            {/* CheesePowerz */}
-            <div className="text-center space-y-0.5">
-              <div className="flex items-center justify-center gap-1 text-muted-foreground">
-                <Zap className="w-3 h-3" />
-                <span className="text-[10px] font-medium">CheesePowerz</span>
-              </div>
-              {isPowerzLoading ? (
-                <Skeleton className="h-4 w-16 mx-auto bg-muted" />
-              ) : (
-                <p className="text-xs font-semibold text-cheese">
-                  {formatWaxAmount(totalWaxCheesepowerz)}
-                </p>
-              )}
-              <p className="text-[10px] text-muted-foreground">WAX</p>
-            </div>
-
             {/* Compound */}
             <div className="text-center space-y-0.5">
               <div className="flex items-center justify-center gap-1 text-muted-foreground">
@@ -102,7 +84,7 @@ export const TotalStats = () => {
         )}
 
         {/* Total Nulls Count */}
-        {!isLoading && (
+        {!isLoading && !isError && (
           <div className="text-center pt-1 border-t border-cheese/10">
             <p className="text-xs text-muted-foreground">
               Total Nulls: <span className="font-semibold text-cheese">{totalBurns.toLocaleString()}</span>
