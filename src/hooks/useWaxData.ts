@@ -4,15 +4,11 @@ import {
   fetchAlcorPoolPrice, 
   fetchVoterInfo,
   fetchGlobalState,
-  fetchContractConfig,
-  fetchWhitelist,
-  fetchBurnTrack,
   calculateCheesePerWax,
   calculateClaimableRewards,
   getTimeUntilNextClaim,
   canClaim as checkCanClaim,
 } from '@/lib/waxApi';
-import { useWallet } from '@/contexts/WalletContext';
 
 const CHEESEBURNER_ACCOUNT = 'cheeseburner';
 const ALCOR_POOL_ID = 1252;
@@ -21,17 +17,14 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 interface WaxData {
   claimableWax: number;
   estimatedCheese: number;
-  cheeseBurnAmount: number;
-  cheeseRewardAmount: number;
-  cheeseLiquidityAmount: number;
-  waxStakeAmount: number;
+  cheeseBurnAmount: number;       // 63% of original value (78.75% of CHEESE)
+  cheeseRewardAmount: number;     // 10% of original value (12.5% of CHEESE)
+  cheeseLiquidityAmount: number;  // 7% of original value (8.75% of CHEESE)
+  waxStakeAmount: number;         // 20% of WAX staked to CPU
   cheesePerWax: number;
   canClaim: boolean;
   timeUntilNextClaim: number;
   lastClaimTime: string | null;
-  isPriorityWindow: boolean;
-  isWhitelisted: boolean;
-  priorityTimeRemaining: number;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
@@ -40,9 +33,6 @@ interface WaxData {
 
 export function useWaxData(): WaxData {
   const [timeUntilNextClaim, setTimeUntilNextClaim] = useState<number>(0);
-  const [priorityTimeRemaining, setPriorityTimeRemaining] = useState<number>(0);
-  const { session } = useWallet();
-  const walletAccount = session?.actor?.toString() ?? null;
 
   // Fetch Alcor pool price data
   const poolQuery = useQuery({
@@ -68,74 +58,22 @@ export function useWaxData(): WaxData {
     staleTime: 10000,
   });
 
-  // Fetch contract config for priority_window
-  const configQuery = useQuery({
-    queryKey: ['contractConfig', CHEESEBURNER_ACCOUNT],
-    queryFn: () => fetchContractConfig(CHEESEBURNER_ACCOUNT),
-    refetchInterval: REFRESH_INTERVAL,
-    staleTime: 10000,
-  });
-
-  // Fetch whitelist
-  const whitelistQuery = useQuery({
-    queryKey: ['whitelist', CHEESEBURNER_ACCOUNT],
-    queryFn: () => fetchWhitelist(CHEESEBURNER_ACCOUNT),
-    refetchInterval: REFRESH_INTERVAL,
-    staleTime: 10000,
-  });
-
-  // Fetch burn track for last_burn timestamp
-  const burnTrackQuery = useQuery({
-    queryKey: ['burnTrack', CHEESEBURNER_ACCOUNT],
-    queryFn: () => fetchBurnTrack(CHEESEBURNER_ACCOUNT),
-    refetchInterval: REFRESH_INTERVAL,
-    staleTime: 10000,
-  });
-
+  // Use last_claim_time for cooldown (only updates on actual claimgbmvote, not on staking)
   const lastClaimTime = voterQuery.data?.last_claim_time ?? null;
-
-  // Calculate priority window state
-  const priorityWindow = configQuery.data?.priority_window ?? 172800;
-  const lastBurnTime = burnTrackQuery.data?.last_burn ?? null;
-
-  const isPriorityWindow = useMemo(() => {
-    if (!lastBurnTime) return false;
-    const lastBurnMs = new Date(lastBurnTime + 'Z').getTime();
-    const elapsed = (Date.now() - lastBurnMs) / 1000;
-    return elapsed < priorityWindow;
-  }, [lastBurnTime, priorityWindow]);
-
-  const isWhitelisted = useMemo(() => {
-    if (!walletAccount || !whitelistQuery.data) return false;
-    return whitelistQuery.data.some(row => row.account === walletAccount);
-  }, [walletAccount, whitelistQuery.data]);
 
   // Update countdown timer every second
   useEffect(() => {
     if (!lastClaimTime) return;
+
     const updateTimer = () => {
       setTimeUntilNextClaim(getTimeUntilNextClaim(lastClaimTime));
     };
+
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
+
     return () => clearInterval(interval);
   }, [lastClaimTime]);
-
-  // Update priority window countdown every second
-  useEffect(() => {
-    if (!lastBurnTime) {
-      setPriorityTimeRemaining(0);
-      return;
-    }
-    const updatePriority = () => {
-      const lastBurnMs = new Date(lastBurnTime + 'Z').getTime();
-      const endMs = lastBurnMs + priorityWindow * 1000;
-      setPriorityTimeRemaining(Math.max(0, endMs - Date.now()));
-    };
-    updatePriority();
-    const interval = setInterval(updatePriority, 1000);
-    return () => clearInterval(interval);
-  }, [lastBurnTime, priorityWindow]);
 
   // Calculate claimable rewards from voter and global state
   const claimableWax = useMemo(() => {
@@ -145,9 +83,18 @@ export function useWaxData(): WaxData {
 
   const cheesePerWax = poolQuery.data ? calculateCheesePerWax(poolQuery.data) : 0;
   
+  // Calculate distribution breakdown
+  // 20% of WAX goes to CPU stake
   const waxStakeAmount = claimableWax * 0.20;
+  
+  // 80% of WAX is swapped for CHEESE
   const waxToSwap = claimableWax * 0.80;
   const estimatedCheese = waxToSwap * cheesePerWax;
+  
+  // Of the swapped CHEESE:
+  // - 63/80 (78.75%) is nulled
+  // - 10/80 (12.5%) is reward
+  // - 7/80 (8.75%) is xCHEESE (sent to xcheeseliqst)
   const cheeseBurnAmount = estimatedCheese * (63 / 80);
   const cheeseRewardAmount = estimatedCheese * (10 / 80);
   const cheeseLiquidityAmount = estimatedCheese * (7 / 80);
@@ -158,9 +105,6 @@ export function useWaxData(): WaxData {
     poolQuery.refetch();
     voterQuery.refetch();
     globalQuery.refetch();
-    configQuery.refetch();
-    whitelistQuery.refetch();
-    burnTrackQuery.refetch();
   };
 
   return {
@@ -174,9 +118,6 @@ export function useWaxData(): WaxData {
     canClaim,
     timeUntilNextClaim,
     lastClaimTime,
-    isPriorityWindow,
-    isWhitelisted,
-    priorityTimeRemaining,
     isLoading: poolQuery.isLoading || voterQuery.isLoading || globalQuery.isLoading,
     isError: poolQuery.isError || voterQuery.isError || globalQuery.isError,
     error: poolQuery.error || voterQuery.error || globalQuery.error,

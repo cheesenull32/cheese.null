@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp, Droplet, Shield } from 'lucide-react';
+import { RefreshCw, Clock, CheckCircle, Gift, TrendingUp, Droplet } from 'lucide-react';
 import { useWaxData } from '@/hooks/useWaxData';
 import { formatWaxAmount, formatCheeseAmount, formatCountdown } from '@/lib/waxApi';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,9 +16,7 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
     cheeseLiquidityAmount,
     waxStakeAmount,
     canClaim, 
-    timeUntilNextClaim,
-    isPriorityWindow,
-    priorityTimeRemaining,
+    timeUntilNextClaim, 
     isLoading, 
     isError, 
     refetch 
@@ -93,16 +91,6 @@ export const BurnStats = ({ onCanClaimChange }: BurnStatsProps) => {
 
         {/* Divider */}
         <div className="border-t border-cheese/10" />
-
-        {/* Priority Window Indicator */}
-        {isPriorityWindow && (
-          <div className="flex items-center justify-center gap-2 text-amber-400">
-            <Shield className="w-4 h-4" />
-            <span className="text-xs font-medium">
-              Priority window — {formatCountdown(priorityTimeRemaining)}
-            </span>
-          </div>
-        )}
 
         {/* Cooldown Status */}
         <div className="text-center space-y-2">

@@ -7,27 +7,14 @@ ACTION cheeseburner::setconfig(
     name admin,
     uint64_t alcor_pool_id,
     bool enabled,
-    asset min_wax_to_burn,
-    uint32_t priority_window
+    asset min_wax_to_burn
 ) {
     // Get current config to check admin
     config_table config_singleton(get_self(), get_self().value);
     
     if (config_singleton.exists()) {
-        // Migration-safe: read only the admin name (first 8 bytes) from raw singleton data.
-        // This works whether the stored config has 4 fields (old) or 5 fields (new),
-        // because the admin name is always the first field.
-        auto db_itr = eosio::internal_use_do_not_use::db_find_i64(get_self().value, get_self().value, "config"_n.value, "config"_n.value);
-        if (db_itr >= 0) {
-            // Read just enough bytes for a name (8 bytes)
-            char buf[8];
-            auto bytes_read = eosio::internal_use_do_not_use::db_get_i64(db_itr, buf, sizeof(buf));
-            check(bytes_read >= 8, "Corrupted config data");
-            name stored_admin = name(*reinterpret_cast<uint64_t*>(buf));
-            require_auth(stored_admin);
-            // Remove old singleton so it can be re-created with new format
-            config_singleton.remove();
-        }
+        configrow current = config_singleton.get();
+        require_auth(current.admin);
     } else {
         // First time setup - require contract authority
         require_auth(get_self());
@@ -44,8 +31,7 @@ ACTION cheeseburner::setconfig(
         .admin = admin,
         .alcor_pool_id = alcor_pool_id,
         .enabled = enabled,
-        .min_wax_to_burn = min_wax_to_burn,
-        .priority_window = priority_window
+        .min_wax_to_burn = min_wax_to_burn
     };
     config_singleton.set(new_config, get_self());
 }
@@ -58,19 +44,6 @@ ACTION cheeseburner::burn(name caller) {
     configrow config = get_config();
     check(config.enabled, "Burns are currently disabled");
 
-    // Check whitelist priority window
-    burn_track_table burn_track(get_self(), get_self().value);
-    if (burn_track.exists()) {
-        auto track = burn_track.get();
-        uint32_t elapsed = current_time_point().sec_since_epoch() - track.last_burn.sec_since_epoch();
-        if (elapsed < config.priority_window) {
-            // Still in priority window -- caller must be whitelisted
-            whitelist_table wl(get_self(), get_self().value);
-            auto itr = wl.find(caller.value);
-            check(itr != wl.end(), "Priority window active -- only whitelisted accounts can burn right now");
-        }
-    }
-
     // Store caller for later use in on_cheese_transfer
     pending_burn_table pending(get_self(), get_self().value);
     pending.set({
@@ -81,35 +54,14 @@ ACTION cheeseburner::burn(name caller) {
     }, get_self());
 
     // Claim vote rewards from eosio
+    // The claimed WAX will arrive via eosio.token::transfer notification,
+    // which triggers on_wax_transfer to handle staking and swapping
     action(
         permission_level{get_self(), "active"_n},
         EOSIO_CONTRACT,
         "claimgbmvote"_n,
         make_tuple(get_self())
     ).send();
-}
-
-// ==================== WHITELIST MANAGEMENT ====================
-
-ACTION cheeseburner::addwhitelist(name account) {
-    configrow config = get_config();
-    require_auth(config.admin);
-    check(is_account(account), "Account does not exist");
-    whitelist_table wl(get_self(), get_self().value);
-    auto itr = wl.find(account.value);
-    check(itr == wl.end(), "Account already whitelisted");
-    wl.emplace(get_self(), [&](auto& row) {
-        row.account = account;
-    });
-}
-
-ACTION cheeseburner::rmwhitelist(name account) {
-    configrow config = get_config();
-    require_auth(config.admin);
-    whitelist_table wl(get_self(), get_self().value);
-    auto itr = wl.find(account.value);
-    check(itr != wl.end(), "Account not whitelisted");
-    wl.erase(itr);
 }
 
 // ==================== WAX TRANSFER HANDLER ====================
@@ -283,10 +235,6 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
         "logburn"_n,
         make_tuple(burn_info.caller, burn_info.wax_claimed, burn_info.wax_swapped, to_burn)
     ).send();
-
-    // Update last burn timestamp for priority window tracking
-    burn_track_table burn_track(get_self(), get_self().value);
-    burn_track.set({ .last_burn = current_time_point() }, get_self());
 
     // Clear pending burn
     pending.remove();
