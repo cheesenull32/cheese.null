@@ -1,64 +1,148 @@
 
-# Remove Caller Reward — Redirect 10% to xCHEESE Liquidity
+
+# Update Distribution Model + Add Cheesepowerz Tracking
 
 ## Summary
-Remove the 10% caller reward entirely to eliminate bot incentive. The 10% previously sent to the caller will now go to `xcheeseliqst` (xCHEESE liquidity), making that allocation 17% of swapped CHEESE instead of 7%.
+
+Change the WAX and CHEESE distribution splits, remove the caller reward entirely, and add a **new separate table** (`cpowerstats`) in the contract to track WAX sent to the `cheesepowerz` account -- avoiding any modification to the existing `stats` table schema.
 
 ## New Distribution Model
 
+### WAX Split (claimed vote rewards)
+
 | Destination | Old | New |
 |---|---|---|
-| Burned to eosio.null | 63% of original value (78.75% of CHEESE) | unchanged |
-| xCHEESE liquidity | 7% of original value (8.75% of CHEESE) | **17% of original value (21.25% of CHEESE)** |
-| Caller reward | 10% of original value (12.5% of CHEESE) | **removed** |
-| WAX staked to CPU | 20% of WAX | unchanged |
+| Staked to CPU (delegatebw) | 20% | 20% (unchanged) |
+| Sent to `cheesepowerz` | -- | **5%** |
+| Swapped for CHEESE via Alcor | 80% | **75%** |
 
-## Contract Changes (`contracts/`)
+### CHEESE Split (of the swapped CHEESE)
 
-### `cheeseburner.cpp` — `on_cheese_transfer`
-- Remove the `reward_amount` calculation (`quantity.amount * 10 / 80`)
-- Remove the CHEESE transfer action to `burn_info.caller`
-- Change `liquidity_amount` to `quantity.amount * 17 / 80` (21.25% of swapped CHEESE)
-- Update `burn_amount` = `quantity.amount - liquidity_amount` (the remainder, ~78.75%)
-- Update `update_stats(...)` call — pass `asset(0, CHEESE_SYMBOL)` for the reward argument
+| Destination | Old | New |
+|---|---|---|
+| Burned to eosio.null | 78.75% of CHEESE | **85%** |
+| Sent to xcheeseliqst | 8.75% of CHEESE | **15%** |
+| Caller reward | 12.5% of CHEESE | **Removed** |
+
+Math check: 20% + 5% + 75% = 100% WAX. 85% + 15% = 100% CHEESE.
+
+---
+
+## Warnings and Risks
+
+1. **New table, not new row** -- Using a brand-new `multi_index` table (`cpowerstats`) with its own struct avoids any ABI deserialization issues with the existing `stats` table. The existing `stats` table remains untouched in schema.
+2. **Existing `total_cheese_rewards` field** -- The `stats_row` already has `total_cheese_rewards`. It will simply stop accumulating. No schema change needed.
+3. **Contract redeployment required** -- All contract changes need redeployment to the `cheeseburner` account on WAX mainnet. The frontend changes are display-only and safe to deploy independently.
+4. **Alcor swap memo** -- The minimum output in the swap memo changes because we're now swapping 75% instead of 80%. The `0.0000 CHEESE` minimum stays as-is (it's a slippage floor).
+
+---
+
+## Contract Changes
 
 ### `cheeseburner.hpp`
-- No structural changes required; the `stats_row` table can keep `total_cheese_rewards` for historical reference, or it can be removed — your choice. Keeping it avoids a schema migration.
 
-### `cheeseburner.cpp` — `burn()` action
-- The `caller` parameter can be kept for logging/identification purposes in `logburn`, even though no reward is paid. This is useful for on-chain transparency (you can see who triggered the burn in transaction history).
+Add a new table definition (does NOT touch existing `stats_row`):
+
+```text
+TABLE cpowerrow {
+    asset total_wax_cheesepowerz;   // Total WAX sent to cheesepowerz
+    uint64_t primary_key() const { return 0; }
+};
+typedef multi_index<"cpowerstats"_n, cpowerrow> cpowerstats_table;
+```
+
+Add a new helper declaration:
+
+```text
+void update_cpowerstats(asset wax_sent);
+```
+
+### `cheeseburner.cpp` -- `on_wax_transfer`
+
+- Change the WAX split from 20/80 to 20/5/75:
+  - `stake_amount = quantity.amount * 20 / 100` (unchanged)
+  - `cheesepowerz_amount = quantity.amount * 5 / 100` (new)
+  - `swap_amount = quantity.amount - stake_amount - cheesepowerz_amount` (75%)
+- Add a WAX transfer action to the `cheesepowerz` account with memo `"cheesepowerz allocation"`
+- Call `update_cpowerstats(cheesepowerz_wax)` to record it in the new table
+- Update the swap memo to use `75` instead of `80` in ratio references
+
+### `cheeseburner.cpp` -- `on_cheese_transfer`
+
+- Remove the `reward_amount` calculation entirely
+- Remove the CHEESE transfer action to `burn_info.caller`
+- Change CHEESE split to simple 85/15:
+  - `liquidity_amount = quantity.amount * 15 / 100`
+  - `burn_amount = quantity.amount - liquidity_amount` (85%)
+- Update `update_stats(...)` call -- pass `asset(0, CHEESE_SYMBOL)` for the reward argument
+
+### `cheeseburner.cpp` -- new helper
+
+```text
+void cheeseburner::update_cpowerstats(asset wax_sent) {
+    cpowerstats_table cpower(get_self(), get_self().value);
+    auto itr = cpower.find(0);
+    if (itr == cpower.end()) {
+        cpower.emplace(get_self(), [&](auto& row) {
+            row.total_wax_cheesepowerz = wax_sent;
+        });
+    } else {
+        cpower.modify(itr, same_payer, [&](auto& row) {
+            row.total_wax_cheesepowerz += wax_sent;
+        });
+    }
+}
+```
+
+---
 
 ## Frontend Changes
 
+### `src/lib/waxApi.ts`
+
+- Add a new `fetchCheesepowerzStats` function that reads the `cpowerstats` table from the contract
+- Add a `CheesepowerzStats` interface
+
 ### `src/hooks/useWaxData.ts`
-- Remove `cheeseRewardAmount` from calculations and return value
-- Update `cheeseLiquidityAmount` to `estimatedCheese * (17 / 80)`
-- Update `cheeseBurnAmount` to `estimatedCheese * (63 / 80)` (unchanged, but verify)
-- Remove `cheeseRewardAmount` from the `WaxData` interface and return object
+
+- Remove `cheeseRewardAmount` from the interface and calculations
+- Change WAX swap from `0.80` to `0.75`
+- Add `waxCheesepowerzAmount = claimableWax * 0.05`
+- Change CHEESE split to `estimatedCheese * 0.85` (burn) and `estimatedCheese * 0.15` (liquidity)
+
+### `src/hooks/useContractStats.ts`
+
+- Add a query for the new `cpowerstats` table
+- Expose `totalWaxCheesepowerz` in the return value
 
 ### `src/components/BurnStats.tsx`
-- Remove the "Your Reward" column from the 3-column distribution grid
-- Change grid from `grid-cols-3` to `grid-cols-2` (xCHEESE + Compound)
-- Update xCHEESE label to reflect the new 17% allocation if desired
+
+- Remove the "Your Reward" card
+- Add a "CheesePowerz" card showing the 5% WAX allocation
+- Update grid from `grid-cols-3` to `grid-cols-3` (xCHEESE, Compound, CheesePowerz)
+
+### `src/components/TotalStats.tsx`
+
+- Remove the "Rewards" card from the lifetime stats grid
+- Add a "CheesePowerz" card showing `totalWaxCheesepowerz`
+- Keep grid at `grid-cols-3` (CheesePowerz, xCHEESE, Compound)
 
 ### `src/components/BurnButton.tsx`
-- Remove the comment `// Pass caller to receive 10% reward`
 
-### `src/pages/Index.tsx`
-- Update the hint text from `"Click to claim & burn 🧀🔥"` — the reward mention in comments can be cleaned up
+- Remove the `// Pass caller to receive 10% reward` comment
 
-## Technical Notes
-- The math check: 78.75% (burn) + 21.25% (xCHEESE) = 100% of swapped CHEESE ✓
-- The contract still receives `caller` in the `burn` action — this is kept for `logburn` transparency, not for payment
-- No table schema migration is required since `total_cheese_rewards` in the stats table can remain (it will just stop accumulating new values)
-- The frontend changes are safe to deploy at any time; they're display-only. The contract changes require redeployment to the `cheeseburner` account on WAX mainnet
+---
 
 ## Files Changed
 
 | File | Change |
 |---|---|
-| `contracts/cheeseburner.cpp` | Remove reward transfer, update liquidity to 17/80 |
-| `contracts/cheeseburner.hpp` | Optional: remove `total_cheese_rewards` from stats (or leave it) |
-| `src/hooks/useWaxData.ts` | Remove `cheeseRewardAmount`, update liquidity ratio |
-| `src/components/BurnStats.tsx` | Remove "Your Reward" card, switch to 2-column grid |
+| `contracts/cheeseburner.hpp` | Add `cpowerrow` table + `update_cpowerstats` helper |
+| `contracts/cheeseburner.cpp` | WAX split 20/5/75, CHEESE split 85/15, remove reward, add cheesepowerz transfer |
+| `src/lib/waxApi.ts` | Add `fetchCheesepowerzStats` + interface |
+| `src/hooks/useWaxData.ts` | New ratios, remove reward, add cheesepowerz amount |
+| `src/hooks/useContractStats.ts` | Query new `cpowerstats` table |
+| `src/components/BurnStats.tsx` | Replace reward card with cheesepowerz card |
+| `src/components/TotalStats.tsx` | Replace rewards card with cheesepowerz card |
 | `src/components/BurnButton.tsx` | Remove reward comment |
+
