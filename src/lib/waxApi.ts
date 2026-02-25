@@ -72,6 +72,10 @@ export interface ContractStats {
   total_cheese_liquidity: string;
 }
 
+export interface CheesepowerzStats {
+  total_wax_cheesepowerz: string;
+}
+
 // Parse asset string like "123.45678900 WAX" to number
 export function parseAssetAmount(assetString: string): number {
   if (!assetString) return 0;
@@ -108,6 +112,29 @@ export async function fetchContractStats(contractAccount: string): Promise<Contr
     return null;
   } catch (error) {
     console.error('Error fetching contract stats:', error);
+    return null;
+  }
+}
+
+export async function fetchCheesepowerzStats(contractAccount: string): Promise<CheesepowerzStats | null> {
+  try {
+    const response = await fetch(WAX_API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: contractAccount,
+        scope: contractAccount,
+        table: 'cpowerstats',
+        limit: 1,
+        json: true,
+      }),
+    });
+
+    if (!response.ok) throw new Error(`WAX API error: ${response.status}`);
+    const data = await response.json();
+    return data.rows?.length > 0 ? (data.rows[0] as CheesepowerzStats) : null;
+  } catch (error) {
+    console.error('Error fetching cheesepowerz stats:', error);
     return null;
   }
 }

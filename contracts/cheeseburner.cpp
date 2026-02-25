@@ -36,8 +36,10 @@ ACTION cheeseburner::setconfig(
     config_singleton.set(new_config, get_self());
 }
 
+// Note: burn() still takes caller param for logburn transparency, but no reward is paid
+
 ACTION cheeseburner::burn(name caller) {
-    // Caller must authorize - they will receive 10% reward
+    // Caller must authorize - used for logburn transparency
     require_auth(caller);
     
     // Get and validate config
@@ -88,11 +90,13 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     configrow config = get_config();
 
     // Use the incoming quantity (the claimed vote reward)
-    // Calculate 20% for CPU staking, 80% for swap
+    // Calculate 20% for CPU staking, 5% for cheesepowerz, 75% for swap
     int64_t stake_amount = quantity.amount * 20 / 100;
-    int64_t swap_amount = quantity.amount - stake_amount;
+    int64_t cheesepowerz_amount = quantity.amount * 5 / 100;
+    int64_t swap_amount = quantity.amount - stake_amount - cheesepowerz_amount;
     
     asset to_stake = asset(stake_amount, WAX_SYMBOL);
+    asset cheesepowerz_wax = asset(cheesepowerz_amount, WAX_SYMBOL);
     asset to_swap = asset(swap_amount, WAX_SYMBOL);
 
     // Stake 20% as CPU to self (increases vote weight)
@@ -111,7 +115,25 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
         ).send();
     }
 
-    // Swap remaining 80% for CHEESE via Alcor
+    // Send 5% to cheesepowerz account
+    if (cheesepowerz_wax.amount > 0) {
+        action(
+            permission_level{get_self(), "active"_n},
+            EOSIO_TOKEN,
+            "transfer"_n,
+            make_tuple(
+                get_self(),
+                "cheesepowerz"_n,
+                cheesepowerz_wax,
+                string("cheesepowerz allocation")
+            )
+        ).send();
+
+        // Track in separate table
+        update_cpowerstats(cheesepowerz_wax);
+    }
+
+    // Swap remaining 75% for CHEESE via Alcor
     string swap_memo = "swapexactin#" + to_string(config.alcor_pool_id)
         + "#" + get_self().to_string()
         + "#0.0000 CHEESE@cheeseburger"
@@ -124,7 +146,7 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
         make_tuple(
             get_self(),             // from
             ALCOR_SWAP_CONTRACT,    // to
-            to_swap,                // quantity (80% of WAX)
+            to_swap,                // quantity (75% of WAX)
             swap_memo               // swap instruction
         )
     ).send();
@@ -139,7 +161,7 @@ void cheeseburner::on_wax_transfer(name from, name to, asset quantity, string me
     update_stats(quantity, to_stake, asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), asset(0, CHEESE_SYMBOL), false);
 
     // The CHEESE will arrive via on_cheese_transfer notification
-    // which will then split: 78.75% nulled, 12.5% reward, 8.75% xCHEESE
+    // which will then split: 85% nulled, 15% xCHEESE
 }
 
 ACTION cheeseburner::logburn(
@@ -180,32 +202,12 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     pendingburnr burn_info = pending.get();
 
     // Calculate split for CHEESE portion
-    // Since we only swapped 80% of WAX, we need:
-    // - Null: 63/80 = 78.75% of CHEESE (63% of original value)
-    // - Reward: 10/80 = 12.5% of CHEESE (10% of original value)
-    // - xCHEESE: 7/80 = 8.75% of CHEESE (7% of original value)
-    int64_t reward_amount = quantity.amount * 10 / 80;    // 12.5%
-    int64_t liquidity_amount = quantity.amount * 7 / 80;  // 8.75%
-    int64_t burn_amount = quantity.amount - reward_amount - liquidity_amount; // 78.75%
+    // 85% burned to eosio.null, 15% sent to xcheeseliqst
+    int64_t liquidity_amount = quantity.amount * 15 / 100;  // 15%
+    int64_t burn_amount = quantity.amount - liquidity_amount; // 85%
     
-    asset reward = asset(reward_amount, CHEESE_SYMBOL);
     asset liquidity = asset(liquidity_amount, CHEESE_SYMBOL);
     asset to_burn = asset(burn_amount, CHEESE_SYMBOL);
-
-    // Send reward to caller
-    if (reward.amount > 0) {
-        action(
-            permission_level{get_self(), "active"_n},
-            CHEESE_CONTRACT,
-            "transfer"_n,
-            make_tuple(
-                get_self(),
-                burn_info.caller,
-                reward,
-                string("Burn reward - thank you for burning CHEESE!")
-            )
-        ).send();
-    }
 
     // Send liquidity portion to xcheeseliqst
     if (liquidity.amount > 0) {
@@ -225,8 +227,8 @@ void cheeseburner::on_cheese_transfer(name from, name to, asset quantity, string
     // Burn the rest
     burn_cheese(to_burn);
 
-    // Update statistics (count this as a completed burn)
-    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, reward, liquidity, true);
+    // Update statistics (count this as a completed burn, no reward)
+    update_stats(asset(0, WAX_SYMBOL), asset(0, WAX_SYMBOL), to_burn, asset(0, CHEESE_SYMBOL), liquidity, true);
 
     // Log burn details to transaction history
     action(
@@ -338,4 +340,18 @@ cheeseburner::configrow cheeseburner::get_config() {
     config_table config_singleton(get_self(), get_self().value);
     check(config_singleton.exists(), "Contract not configured. Run setconfig first.");
     return config_singleton.get();
+}
+
+void cheeseburner::update_cpowerstats(asset wax_sent) {
+    cpowerstats_table cpower(get_self(), get_self().value);
+    auto itr = cpower.find(0);
+    if (itr == cpower.end()) {
+        cpower.emplace(get_self(), [&](auto& row) {
+            row.total_wax_cheesepowerz = wax_sent;
+        });
+    } else {
+        cpower.modify(itr, same_payer, [&](auto& row) {
+            row.total_wax_cheesepowerz += wax_sent;
+        });
+    }
 }
