@@ -69,6 +69,13 @@ public:
     };
     typedef multi_index<"stats"_n, stats_row> stats_table;
 
+    // CheesePowerz tracking table (separate from stats to avoid migration issues)
+    TABLE cpowerrow {
+        asset total_wax_cheesepowerz;   // Total WAX sent to cheesepowerz
+        uint64_t primary_key() const { return 0; }
+    };
+    typedef multi_index<"cpowerstats"_n, cpowerrow> cpowerstats_table;
+
     // Alcor AMM Swap pools table (external - read only)
     // Matches actual swap.alcor pools table schema
     TABLE alcor_pool {
@@ -145,4 +152,7 @@ private:
 
     // Get or create default config
     configrow get_config();
+
+    // Update cheesepowerz stats
+    void update_cpowerstats(asset wax_sent);
 };

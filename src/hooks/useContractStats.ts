@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchContractStats, parseAssetAmount } from '@/lib/waxApi';
+import { fetchContractStats, fetchCheesepowerzStats, parseAssetAmount } from '@/lib/waxApi';
 
 const CONTRACT_ACCOUNT = 'cheeseburner';
 
@@ -9,6 +9,7 @@ export interface ContractStatsData {
   totalCheeseRewards: number;
   totalCheeseLiquidity: number;
   totalWaxCompounded: number;
+  totalWaxCheesepowerz: number;
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
@@ -18,7 +19,14 @@ export function useContractStats(): ContractStatsData {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['contractStats', CONTRACT_ACCOUNT],
     queryFn: () => fetchContractStats(CONTRACT_ACCOUNT),
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
+    staleTime: 10000,
+  });
+
+  const cpowerQuery = useQuery({
+    queryKey: ['cheesepowerzStats', CONTRACT_ACCOUNT],
+    queryFn: () => fetchCheesepowerzStats(CONTRACT_ACCOUNT),
+    refetchInterval: 30000,
     staleTime: 10000,
   });
 
@@ -28,8 +36,9 @@ export function useContractStats(): ContractStatsData {
     totalCheeseRewards: parseAssetAmount(data?.total_cheese_rewards ?? ''),
     totalCheeseLiquidity: parseAssetAmount(data?.total_cheese_liquidity ?? ''),
     totalWaxCompounded: parseAssetAmount(data?.total_wax_staked ?? ''),
-    isLoading,
-    isError,
-    refetch,
+    totalWaxCheesepowerz: parseAssetAmount(cpowerQuery.data?.total_wax_cheesepowerz ?? ''),
+    isLoading: isLoading || cpowerQuery.isLoading,
+    isError: isError || cpowerQuery.isError,
+    refetch: () => { refetch(); cpowerQuery.refetch(); },
   };
 }
